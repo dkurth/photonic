@@ -3,11 +3,14 @@ import { app, BrowserWindow, shell } from 'electron'
 import { migrate, openDatabase, type DB } from './db'
 import { backupIfDue } from './db/backup'
 import { coreMigrations } from './db/migrations'
+import { createDedupeFeature } from './features/dedupe'
+import { createWorkerHasher } from './features/dedupe/workerHasher'
 import { FeatureRegistry } from './features/registry'
 import { broadcastProgress, handle, registerCoreIpc } from './ipc'
 import { buildMenu } from './menu'
 import { handlePhotoProtocol, registerPhotoScheme } from './photoProtocol'
 import { ScanService } from './scanner/service'
+import { getSetting, setSetting } from './settings'
 import { createWorkerExtractor } from './scanner/workerExtractor'
 
 // Keep development data away from real data. PHOTONIC_USER_DATA overrides both (used by e2e tests).
@@ -22,6 +25,11 @@ registerPhotoScheme()
 let db: DB | null = null
 let scans: ScanService | null = null
 let backupDone: Promise<void> = Promise.resolve()
+let features: FeatureRegistry | null = null
+
+const DEDUPE_FLAG = 'feature.dedupe'
+/** Duplicate detection is on unless turned off (View menu). */
+const dedupeEnabled = (d: DB): boolean => getSetting<boolean>(d, DEDUPE_FLAG) ?? true
 const metadata = createWorkerExtractor()
 
 function createWindow(): void {
@@ -64,26 +72,30 @@ app.whenReady().then(() => {
   const dbPath = join(userData, 'photonic.db')
   const backupDir = join(userData, 'backups')
 
-  const features = new FeatureRegistry()
-  // Optional features register here (the dedupe feature arrives in M5).
-
   db = openDatabase(dbPath)
-  migrate(db, [...coreMigrations, ...features.migrations()])
+  migrate(db, coreMigrations) // core first: feature flags live in the settings table
+
+  // Optional features (PLAN.md §8). Each is one line; deleting it (and its folder) removes the feature.
+  const registry = new FeatureRegistry()
+  if (dedupeEnabled(db)) registry.register(createDedupeFeature(createWorkerHasher()))
+  features = registry
+
+  migrate(db, [...coreMigrations, ...registry.migrations()])
   backupDone = backupIfDue(db, backupDir).then(
     () => {},
     (err) => console.error('Backup failed:', err)
   )
 
   scans = new ScanService(db, {
-    hooks: () => features.scanHooks(),
+    hooks: () => registry.scanHooks(),
     extract: metadata.extract,
     emit: broadcastProgress
   })
 
-  registerCoreIpc({ db, dbPath, backupDir, features, scans, extract: metadata.extract })
+  registerCoreIpc({ db, dbPath, backupDir, features: registry, scans, extract: metadata.extract })
   handlePhotoProtocol(() => db)
-  buildMenu()
-  features.registerIpc(handle)
+  registry.registerIpc(handle, { db })
+  buildMenu({ dedupe: dedupeEnabled(db), setDedupe: (on) => db && setSetting(db, DEDUPE_FLAG, on) })
 
   createWindow()
   app.on('activate', () => {
@@ -107,6 +119,7 @@ app.on('will-quit', (e) => {
     try {
       await scans?.cancel()
       await metadata.close()
+      await features?.dispose()
       await backupDone
       db?.close()
       db = null

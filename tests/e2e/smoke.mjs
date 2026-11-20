@@ -1,7 +1,7 @@
 // End-to-end tests: launch the *built* app with a throwaway data dir and a fixture photo folder,
 // and drive it like a user would. Run with `npm run test:e2e` (builds first).
 // Set E2E_SCREENSHOTS=<dir> to save screenshots along the way.
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
@@ -315,7 +315,9 @@ try {
       await shot(win, 'm4-picker')
       await win.keyboard.press('Enter')
       await win.getByRole('dialog').waitFor({ state: 'detached' })
-      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('2019/Italy'))
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=scope]')?.textContent.startsWith('2019/Italy')
+      )
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 2'))
       assert.match(await text(win, 'counts'), /meh\s*2/)
       await shot(win, 'm4-scoped')
@@ -331,7 +333,9 @@ try {
       await win.getByRole('dialog').waitFor()
       for (let i = 0; i < 6; i++) await win.keyboard.press('ArrowUp')
       await win.keyboard.press('Enter')
-      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('Entire library'))
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=scope]')?.textContent.startsWith('Entire library')
+      )
       await win.keyboard.press('2')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 1'))
       await win.keyboard.press('Home')
@@ -384,6 +388,141 @@ try {
       assert.match(await text(win, 'sort'), /^Date/)
       await waitPath(win, 'beach.png')
     })
+    await app.close()
+  }
+
+  // ------------------------------------------------------------------ run 4: dedupe feature
+  const dupData = join(tmp, 'userdata-dupes')
+  const dupes = join(tmp, 'Dupes')
+  const launchDupes = async () => {
+    const app = await _electron.launch({ args: ['.'], env: { ...process.env, PHOTONIC_USER_DATA: dupData } })
+    const win = await app.firstWindow()
+    await win.setViewportSize({ width: 1280, height: 800 })
+    return { app, win }
+  }
+  const dupStats = (win) =>
+    win.evaluate(async () =>
+      window.photonic.photos.counts((await window.photonic.libraries.last()).id, { kind: 'library' })
+    )
+  {
+    const { app, win } = await launchDupes()
+    const [x, y, z] = await makeImages(app, [
+      { hue: 0, w: 300, h: 200 },
+      { hue: 1, w: 300, h: 200 },
+      { hue: 2, w: 300, h: 200 }
+    ])
+    const put = (rel, buf) => {
+      mkdirSync(join(dupes, rel, '..'), { recursive: true })
+      writeFileSync(join(dupes, rel), buf)
+    }
+    put('a.jpg', x)
+    put('copies/a.jpg', x)
+    put('copies/old/a copy.jpg', x)
+    put('b.jpg', y)
+    put('z/b.jpg', y)
+    put('c.jpg', z)
+
+    await step('dedupe: after hashing, a banner reports the duplicate copies', async () => {
+      await stubFolderDialog(app, dupes)
+      await win.click('text=Open a folder…')
+      await win.getByTestId('dup-banner').waitFor({ timeout: 20_000 })
+      assert.match(await text(win, 'dup-banner'), /3 duplicate copies found/)
+      await waitPath(win, 'Dupes/a.jpg')
+      await shot(win, 'm5-banner')
+    })
+
+    await step('dedupe: info bar shows "1 of 3 copies"; D lists the other copies', async () => {
+      await win.waitForFunction(
+        () => document.querySelector('[data-testid=copies-badge]')?.textContent === '1 of 3 copies'
+      )
+      await win.keyboard.press('d')
+      const panel = win.getByRole('dialog', { name: 'Identical copies' })
+      await panel.getByText('copies/old/a copy.jpg', { exact: false }).waitFor()
+      const dialog = await panel.innerText()
+      assert.match(dialog, /copies\/a\.jpg/)
+      assert.match(dialog, /copies\/old\/a copy\.jpg/)
+      await win.keyboard.press('ArrowRight') // shortcuts are paused while the dialog is open
+      await win.keyboard.press('Escape')
+      await win.getByRole('dialog').waitFor({ state: 'detached' })
+      await waitPath(win, 'Dupes/a.jpg')
+    })
+
+    await step('dedupe: 5 shows only duplicated photos, copies grouped together', async () => {
+      await win.keyboard.press('5')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
+      const order = await win.evaluate(async () => {
+        const lib = await window.photonic.libraries.last()
+        const ids = await window.photonic.photos.listIds({
+          libraryId: lib.id,
+          scope: { kind: 'library' },
+          filter: 'duplicates',
+          sort: 'filename'
+        })
+        return Promise.all(ids.map(async (i) => (await window.photonic.photos.get(i)).relPath))
+      })
+      assert.deepEqual(order, ['a.jpg', 'copies/a.jpg', 'copies/old/a copy.jpg', 'b.jpg', 'z/b.jpg'])
+      await win.keyboard.press('2')
+    })
+
+    await step('dedupe: Hide duplicates (confirm) marks the extra copies Meh; one ⌘Z undoes it all', async () => {
+      await win.getByRole('button', { name: 'Hide duplicates' }).click()
+      await win.getByRole('dialog', { name: 'Hide duplicates' }).waitFor()
+      await shot(win, 'm5-confirm')
+      await win.keyboard.press('Enter')
+      await win.waitForSelector('text=Marked 3 copies as Meh')
+      assert.deepEqual(await dupStats(win), { total: 6, unreviewed: 3, like: 0, meh: 3 })
+      await win.keyboard.press('Meta+z')
+      await win.waitForSelector('text=Undid 3 changes')
+      assert.deepEqual(await dupStats(win), { total: 6, unreviewed: 6, like: 0, meh: 0 })
+    })
+
+    await step('dedupe: a renamed file keeps its mark after a rescan', async () => {
+      // Like c.jpg, rename it on disk, rescan
+      await win.evaluate(async () => {
+        const lib = await window.photonic.libraries.last()
+        const ids = await window.photonic.photos.listIds({
+          libraryId: lib.id,
+          scope: { kind: 'library' },
+          filter: 'all',
+          sort: 'filename'
+        })
+        for (const i of ids)
+          if ((await window.photonic.photos.get(i)).relPath === 'c.jpg') await window.photonic.marks.set(i, 'like')
+      })
+      renameSync(join(dupes, 'c.jpg'), join(dupes, 'c-renamed.jpg'))
+      await win.evaluate(async () => window.photonic.libraries.rescan((await window.photonic.libraries.last()).id))
+      const s = await stats(win)
+      assert.equal(s.missing, 0)
+      assert.equal(s.like, 1)
+    })
+
+    await step('dedupe: Dismiss hides the banner', async () => {
+      await win.getByRole('button', { name: 'Dismiss' }).click()
+      await win.getByTestId('dup-banner').waitFor({ state: 'detached' })
+      // turn the feature off for the next launch (same as unticking View → Duplicate Detection)
+      await win.evaluate(() => window.photonic.settings.set('feature.dedupe', false))
+    })
+    await app.close()
+  }
+  {
+    const { app, win } = await launchDupes()
+    await step(
+      'dedupe off: the app works without it — no Duplicates filter, no badge, renames become new photos',
+      async () => {
+        await win.getByTestId('filter-unreviewed').waitFor()
+        assert.equal(await win.getByTestId('filter-duplicates').count(), 0)
+        assert.deepEqual(await win.evaluate(() => window.photonic.features.enabled()), [])
+        await waitPath(win, '.jpg')
+        assert.equal(await win.getByTestId('copies-badge').count(), 0)
+        renameSync(join(dupes, 'c-renamed.jpg'), join(dupes, 'c-again.jpg'))
+        await win.evaluate(async () => window.photonic.libraries.rescan((await window.photonic.libraries.last()).id))
+        const s = await stats(win)
+        assert.equal(s.missing, 1) // without hashes, the old row is just missing
+        await win.keyboard.press('ArrowUp')
+        await win.keyboard.press('Meta+z') // marking and undo still work
+        await shot(win, 'm5-off')
+      }
+    )
     await app.close()
   }
 

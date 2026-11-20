@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Library, ScanProgress } from '@shared/types'
 import { useKeyboard } from './hooks/useKeyboard'
+import { RENDERER_FEATURES } from './features'
+import type { RendererFeature } from './features/types'
 import { applyTheme, systemMode } from './theme/applyTheme'
 import { DEFAULT_PALETTE, isPaletteId, type PaletteId } from './theme/palettes'
 import { Viewer } from './viewer/Viewer'
@@ -13,6 +15,11 @@ export default function App() {
   const [progress, setProgress] = useState<ScanProgress | null>(null)
   const [palette, setPalette] = useState<PaletteId>(DEFAULT_PALETTE)
   const [error, setError] = useState<string | null>(null)
+  const [features, setFeatures] = useState<RendererFeature[]>([])
+
+  useEffect(() => {
+    void api.features.enabled().then((on) => setFeatures(RENDERER_FEATURES.filter((f) => on.includes(f.name))))
+  }, [api])
 
   // Theme: saved palette + follow the system light/dark setting.
   useEffect(() => {
@@ -70,6 +77,7 @@ export default function App() {
           key={library.id}
           library={library}
           progress={progress?.libraryId === library.id ? progress : null}
+          features={features}
           onOpenFolder={openFolder}
         />
       ) : (

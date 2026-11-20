@@ -14,7 +14,7 @@ describe('FeatureRegistry', () => {
     r.register({ name: 'demo', migrations: [{ version: 100, name: 'demo', sql: '' }], registerIpc })
 
     const ipc = vi.fn()
-    r.registerIpc(ipc)
+    r.registerIpc(ipc, { db: {} as never })
     expect(r.names()).toEqual(['demo'])
     expect(r.migrations().map((m) => m.version)).toEqual([100])
     expect(ipc).toHaveBeenCalledWith('demo:ping', expect.any(Function))

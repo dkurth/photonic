@@ -35,6 +35,15 @@ const api: PhotonicAPI = {
     get: (key) => ipcRenderer.invoke('settings:get', key),
     set: (key, value) => ipcRenderer.invoke('settings:set', key, value)
   },
+  features: {
+    enabled: () => ipcRenderer.invoke('features:enabled')
+  },
+  duplicates: {
+    summary: (libraryId) => ipcRenderer.invoke('duplicates:summary', libraryId),
+    copies: (photoId) => ipcRenderer.invoke('duplicates:copies', photoId),
+    previewHide: (libraryId) => ipcRenderer.invoke('duplicates:previewHide', libraryId),
+    hide: (libraryId) => ipcRenderer.invoke('duplicates:hide', libraryId)
+  },
   onMenu: (cb) => {
     const listener = (_e: IpcRendererEvent, command: string): void => cb(command)
     ipcRenderer.on('menu', listener)

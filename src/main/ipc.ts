@@ -143,6 +143,8 @@ export function registerCoreIpc(ctx: {
     if (row) clipboard.writeText(toPhotoMeta(row).absPath)
   })
 
+  handle('features:enabled', () => ctx.features.names())
+
   handle('settings:get', (key) => getSetting(db, str(key, 'key')))
   handle('settings:set', (key, value) => setSetting(db, str(key, 'key'), value))
 }

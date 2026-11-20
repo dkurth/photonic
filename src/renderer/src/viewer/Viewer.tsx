@@ -21,7 +21,8 @@ import { PhotoCache } from './photoCache'
 import { Stage, type Flash } from './Stage'
 import { Toolbar } from './Toolbar'
 import { TopBar } from './TopBar'
-import { nextSort, SORT_LABELS, ViewControls } from './ViewControls'
+import { FILTERS, nextSort, SORT_LABELS, ViewControls } from './ViewControls'
+import type { FeatureContext, RendererFeature } from '../features/types'
 
 export const defaultView = (libraryId: number): ViewSpec => ({
   libraryId,
@@ -39,10 +40,13 @@ const newSeed = (): number => Math.floor(Math.random() * 2 ** 31)
 export function Viewer({
   library,
   progress,
+  features,
   onOpenFolder
 }: {
   library: Library
   progress: ScanProgress | null
+  /** UI of the optional features that are turned on. */
+  features: RendererFeature[]
   onOpenFolder: () => void
 }) {
   const api = window.photonic
@@ -57,6 +61,8 @@ export function Viewer({
   const [flash, setFlash] = useState<Flash | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [featureModal, setFeatureModal] = useState(false)
+  const filters = useMemo(() => [...FILTERS, ...features.flatMap((f) => f.filters ?? [])], [features])
   const [pressed, press] = usePressed()
 
   const currentId = ids[index] as number | undefined
@@ -341,13 +347,31 @@ export function Viewer({
       s: cycleSort,
       r: reshuffle,
       g: () => (press('scope'), setPickerOpen(true)),
-      '1': () => setFilter('all'),
-      '2': () => setFilter('unreviewed'),
-      '3': () => setFilter('like'),
-      '4': () => setFilter('meh')
+      // 1–4 for the core filters, then any filters added by features (e.g. 5 = Duplicates)
+      ...Object.fromEntries(filters.map((f) => [f.key, () => setFilter(f.id)]))
     },
-    !pickerOpen
+    !pickerOpen && !featureModal
   )
+
+  // Menu: Library → Go to Folder…
+  useEffect(() => api.onMenu((cmd) => cmd === 'go-to-folder' && setPickerOpen(true)), [api])
+
+  const reload = useCallback(async () => {
+    if (view) await loadList(view, currentIdRef.current, index)
+  }, [index, loadList, view])
+
+  const featureCtx: FeatureContext | null = view
+    ? {
+        libraryId: library.id,
+        view,
+        meta,
+        progress,
+        setFilter,
+        reload,
+        toast: flashToast,
+        setModalOpen: setFeatureModal
+      }
+    : null
 
   // --- Render ------------------------------------------------------------------------------
 
@@ -372,6 +396,7 @@ export function Viewer({
           view && (
             <ViewControls
               view={view}
+              filters={filters}
               pressed={pressed}
               onScope={() => setPickerOpen(true)}
               onFilter={setFilter}
@@ -388,7 +413,13 @@ export function Viewer({
           done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} scopeName={scopeName} /> : null
         }
       />
-      <InfoBar meta={meta} pressed={pressed} onCopy={copyPath} onReveal={reveal} />
+      <InfoBar
+        meta={meta}
+        pressed={pressed}
+        onCopy={copyPath}
+        onReveal={reveal}
+        badges={featureCtx && features.map((f) => f.InfoBadge && <f.InfoBadge key={f.name} ctx={featureCtx} />)}
+      />
       <Toolbar
         index={index}
         total={ids.length}
@@ -400,6 +431,7 @@ export function Viewer({
         onLike={() => void mark('like')}
         onMeh={() => void mark('meh')}
       />
+      {featureCtx && features.map((f) => f.Layer && <f.Layer key={f.name} ctx={featureCtx} />)}
       {pickerOpen && (
         <FolderPicker
           libraryId={library.id}

@@ -34,4 +34,12 @@ export interface ScanHooks {
   matchMoves?(ctx: ScanContext, added: ScanPhoto[], missing: ScanPhoto[]): Promise<MovePair[]>
   /** Called after a scan completes successfully. */
   afterScan?(ctx: ScanContext): void
+  /**
+   * Long-running work to do after the scan and EXIF pass (e.g. hashing). Runs inside the same
+   * cancellable job, so it stops whenever another scan starts; it must be safe to resume.
+   */
+  backgroundPass?: {
+    label: string
+    run(ctx: ScanContext & { onProgress: (done: number, total: number) => void }): Promise<void>
+  }
 }

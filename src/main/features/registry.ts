@@ -1,3 +1,4 @@
+import type { DB } from '../db'
 import { CORE_MAX_VERSION, type Migration } from '../db/migrations'
 import type { FilterImpl } from '../ordering'
 import type { ScanHooks } from '../scanner/types'
@@ -34,7 +35,11 @@ export class FeatureRegistry {
     return Object.assign({}, ...this.features.map((f) => f.filters ?? {}))
   }
 
-  registerIpc(ipc: IpcRegistrar): void {
-    for (const f of this.features) f.registerIpc?.(ipc)
+  registerIpc(ipc: IpcRegistrar, ctx: { db: DB }): void {
+    for (const f of this.features) f.registerIpc?.(ipc, ctx)
+  }
+
+  async dispose(): Promise<void> {
+    await Promise.all(this.features.map((f) => f.dispose?.()))
   }
 }

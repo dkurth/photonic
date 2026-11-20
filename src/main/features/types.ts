@@ -1,3 +1,4 @@
+import type { DB } from '../db'
 import type { Migration } from '../db/migrations'
 import type { FilterImpl } from '../ordering'
 import type { ScanHooks } from '../scanner/types'
@@ -13,8 +14,10 @@ export interface Feature {
   name: string
   /** Must use versions >= 100. */
   migrations?: Migration[]
-  registerIpc?(ipc: IpcRegistrar): void
+  registerIpc?(ipc: IpcRegistrar, ctx: { db: DB }): void
   scanHooks?: ScanHooks
   /** Extra view filters, e.g. { duplicates: ... }. */
   filters?: Record<string, FilterImpl>
+  /** Release resources (e.g. worker threads) on quit. */
+  dispose?(): Promise<void>
 }

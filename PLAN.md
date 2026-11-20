@@ -2,7 +2,8 @@
 
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
-Status: **v0.12** (2026-11-20). **M0–M4 complete.**
+Status: **v0.13** (2026-11-20). **M0–M5 complete.**
+- v0.13: M5 built. New core hook `backgroundPass`: feature work like hashing runs after the EXIF pass inside the same cancellable scan job. A renderer feature registry (`src/renderer/src/features/index.ts`) mirrors the main one. If two files *swap* names, both paths still exist, so it counts as two in-place edits and the marks stay with the paths (a rare case, accepted).
 - v0.12: M4 built. The view (scope, filter, sort) is saved per library. Random seeds are saved per library + scope. Prettier is set up (`npm run format`).
 - v0.11: M3 built. Migration 002 adds `mark_events.undone`: undo flags events instead of deleting them, so the log stays a full history. Toolbar buttons never take keyboard focus, so Enter/Space can't trigger them by accident.
 - v0.10: M2 built. The position is saved on every move, not debounced (a debounce lost the last move on quit). `listIds` already supports every scope, filter and sort; the controls for them come in M4.
@@ -358,7 +359,7 @@ A strip along the bottom edge, also shown in full screen:
 
 - A worker thread streams each file through `crypto.createHash('sha256')` and processes ~4 files in parallel. Hashes are saved as soon as they're computed, so the work can be resumed.
 - A photo needs hashing if it has no `photo_hashes` row, or if the row's size/mtime no longer match `photos`.
-- It runs after the metadata pass, at lower priority. The HUD shows *"Hashing… 3,200 / 8,930"*.
+- It runs after the metadata pass as a `backgroundPass` hook, inside the same cancellable scan job, so it stops when a new scan starts and resumes afterwards. The top bar shows *"Hashing… 36%"*.
 
 ### Move detection (`matchMoves` hook)
 
@@ -525,7 +526,7 @@ photonic/
 - Filters 1–4
 - Tests: natural sort, date fallback chain, the same seed always gives the same order, folder scope includes subfolders but not folders that only share a name prefix (`2019` vs `2019-old`)
 
-**M5 — Dedupe feature (optional)**
+**M5 — Dedupe feature (optional)** ✅ *done 2026-11-20*
 - `100_dedupe.sql`, hash worker, `matchMoves` hook, duplicate summary and banner, hide action with batch undo, *Duplicates* filter, copies panel
 - Setting to turn it on or off
 - Tests: rename, move, swapping two files' names, editing in place, moving one of two identical copies; choice of which copy stays; explicit marks never overridden; batch undo restores the exact previous state; **the full core test suite still passes with the feature turned off**

@@ -552,3 +552,60 @@
   padding: 12px;
   color: var(--muted);
 }
+
+/* ---------- Feature UI: banner, copies (dedupe) ---------- */
+.banner {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 16px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--lift) var(--lift) 0 var(--shadow);
+  font-size: 14px;
+}
+.copies-badge {
+  margin-left: 10px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--info);
+  color: var(--on-info);
+  border-radius: var(--radius);
+}
+.copies-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+.copy-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.copy-row .mono {
+  color: var(--ink);
+}
+.note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.modal p {
+  margin: 0;
+  line-height: 1.5;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+}

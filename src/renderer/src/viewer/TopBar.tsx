@@ -10,6 +10,9 @@ function scanStatus(p: ScanProgress | null): string | null {
   if (p.phase === 'metadata' && p.metaTotal > 0) {
     return `Reading dates… ${Math.floor((100 * p.metaDone) / p.metaTotal)}%`
   }
+  if (p.phase === 'tasks' && p.taskLabel) {
+    return p.taskTotal ? `${p.taskLabel}… ${Math.floor((100 * (p.taskDone ?? 0)) / p.taskTotal)}%` : `${p.taskLabel}…`
+  }
   if (p.phase === 'error') return `Scan failed: ${p.message ?? ''}`
   return null
 }

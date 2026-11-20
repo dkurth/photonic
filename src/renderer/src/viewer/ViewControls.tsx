@@ -2,7 +2,13 @@ import type { Filter, SortOrder, ViewSpec } from '@shared/types'
 import { STATUS_LABELS } from '@shared/labels'
 import { KeyCap } from '../components/KeyCap'
 
-export const FILTERS: { id: Filter; key: string; label: string }[] = [
+export interface FilterDef {
+  id: Filter
+  key: string
+  label: string
+}
+
+export const FILTERS: FilterDef[] = [
   { id: 'all', key: '1', label: 'All' },
   { id: 'unreviewed', key: '2', label: STATUS_LABELS.unreviewed.label },
   { id: 'like', key: '3', label: STATUS_LABELS.like.label },
@@ -23,12 +29,15 @@ export function scopeLabel(view: ViewSpec): string {
 /** Scope, filter and sort controls in the top bar. Every one has a key (PLAN.md §2). */
 export function ViewControls({
   view,
+  filters,
   pressed,
   onScope,
   onFilter,
   onSort
 }: {
   view: ViewSpec
+  /** Core filters plus any added by optional features. */
+  filters: FilterDef[]
   pressed: Set<string>
   onScope: () => void
   onFilter: (f: Filter) => void
@@ -47,7 +56,7 @@ export function ViewControls({
         <KeyCap k="G" />
       </button>
       <div className="segmented" role="radiogroup" aria-label="Filter">
-        {FILTERS.map((f) => (
+        {filters.map((f) => (
           <button
             key={f.id}
             role="radio"

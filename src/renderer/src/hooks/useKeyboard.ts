@@ -10,10 +10,14 @@ export type KeyHandler = (e: KeyboardEvent) => void
 export function useKeyboard(map: Record<string, KeyHandler>, enabled = true): void {
   const ref = useRef(map)
   ref.current = map
+  // Read at event time (not via effect re-subscription), so enabling/disabling takes effect on the
+  // very next render — a key pressed right after a dialog closes isn't lost.
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
 
   useEffect(() => {
-    if (!enabled) return
     const onKey = (e: KeyboardEvent): void => {
+      if (!enabledRef.current) return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       const mod = e.metaKey || e.ctrlKey
@@ -26,5 +30,5 @@ export function useKeyboard(map: Record<string, KeyHandler>, enabled = true): vo
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [enabled])
+  }, [])
 }

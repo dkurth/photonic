@@ -39,7 +39,18 @@ export interface FolderInfo {
   unreviewed: number
 }
 
-export type ScanPhase = 'walking' | 'metadata' | 'done' | 'error'
+export interface DuplicateSummary {
+  /** Copies beyond the first in each group: the number "hide duplicates" could mark at most. */
+  extraCopies: number
+  /** Photos that have at least one identical copy. */
+  groups: number
+  /** False while some photos still need hashing (the counts aren't final yet). */
+  hashingDone: boolean
+  hashed: number
+  total: number
+}
+
+export type ScanPhase = 'walking' | 'metadata' | 'tasks' | 'done' | 'error'
 
 export interface ScanProgress {
   libraryId: number
@@ -53,6 +64,10 @@ export interface ScanProgress {
   unreadableFolders: number
   metaDone: number
   metaTotal: number
+  /** Background passes from optional features (phase 'tasks'), e.g. "Hashing". */
+  taskLabel?: string
+  taskDone?: number
+  taskTotal?: number
   message?: string
 }
 
@@ -153,6 +168,18 @@ export interface PhotonicAPI {
   settings: {
     get<T>(key: string): Promise<T | null>
     set<T>(key: string, value: T): Promise<void>
+  }
+  features: {
+    /** Names of the optional features that are turned on, e.g. ['dedupe']. */
+    enabled(): Promise<string[]>
+  }
+  /** Only works when the 'dedupe' feature is enabled (PLAN.md §8). */
+  duplicates: {
+    summary(libraryId: number): Promise<DuplicateSummary>
+    copies(photoId: number): Promise<PhotoMeta[]>
+    /** How many photos `hide` would mark, without changing anything. */
+    previewHide(libraryId: number): Promise<number>
+    hide(libraryId: number): Promise<{ marked: number; batchId: number | null }>
   }
   /** Commands from the app menu (e.g. 'open-folder', 'rescan'). */
   onMenu(cb: (command: string) => void): Unsubscribe

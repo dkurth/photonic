@@ -2,8 +2,12 @@ import type { PhotoList, Scope, SortOrder, Status, StatusCounts, ViewSpec } from
 import type { DB } from './db'
 import { displayDate } from './photos'
 
-/** Extra filters registered by optional features: SQL condition on `photos p` + its params. */
-export type FilterImpl = (libraryId: number) => { where: string; params: unknown[] }
+/**
+ * Extra filters registered by optional features: an SQL condition on `photos p` plus its params.
+ * `groupBy` (an SQL expression) keeps photos with the same value next to each other — each group
+ * appears where its first photo falls in the chosen sort order.
+ */
+export type FilterImpl = (libraryId: number) => { where: string; params: unknown[]; groupBy?: string }
 
 const CORE_FILTERS: Record<string, string> = {
   all: '1 = 1',
@@ -71,7 +75,7 @@ export function listIds(db: DB, view: ViewSpec, extraFilters: Record<string, Fil
 
 /** listIds plus each photo's status, in the same order. */
 export function listPhotos(db: DB, view: ViewSpec, extraFilters: Record<string, FilterImpl> = {}): PhotoList {
-  let filter: { where: string; params: unknown[] }
+  let filter: { where: string; params: unknown[]; groupBy?: string }
   if (view.filter in CORE_FILTERS) filter = { where: CORE_FILTERS[view.filter], params: [] }
   else if (extraFilters[view.filter]) filter = extraFilters[view.filter](view.libraryId)
   else throw new Error(`Unknown filter: ${view.filter}`)
@@ -79,7 +83,7 @@ export function listPhotos(db: DB, view: ViewSpec, extraFilters: Record<string, 
   const scope = scopeSql(view.scope)
   const rows = db
     .prepare(
-      `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms, p.status FROM photos p
+      `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms, p.status, ${filter.groupBy ?? 'NULL'} AS grp FROM photos p
        WHERE p.library_id = ? AND p.missing = 0 AND ${scope.where} AND ${filter.where}`
     )
     .all(view.libraryId, ...scope.params, ...filter.params) as {
@@ -89,10 +93,23 @@ export function listPhotos(db: DB, view: ViewSpec, extraFilters: Record<string, 
     birthtime_ms: number | null
     mtime_ms: number
     status: Status
+    grp: unknown
   }[]
 
-  const sorted = sortRows(rows, view.sort, view.seed ?? 1)
+  let sorted = sortRows(rows, view.sort, view.seed ?? 1)
+  if (filter.groupBy) sorted = clusterGroups(sorted)
   return { ids: sorted.map((r) => r.id), statuses: sorted.map((r) => r.status) }
+}
+
+/** Stable clustering: each group moves up to where its first member is. */
+function clusterGroups<T extends { grp: unknown }>(rows: T[]): T[] {
+  const groups = new Map<unknown, T[]>()
+  for (const r of rows) {
+    const g = groups.get(r.grp)
+    if (g) g.push(r)
+    else groups.set(r.grp, [r])
+  }
+  return [...groups.values()].flat()
 }
 
 /** Status counts for a library, or one folder of it (missing photos excluded). */

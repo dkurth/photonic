@@ -15,13 +15,13 @@ export interface ScanServiceDeps {
 
 interface Job {
   libraryId: number
-  phase: 'walking' | 'metadata'
+  phase: 'walking' | 'metadata' | 'tasks'
   abort: AbortController
   done: Promise<void>
 }
 
 /**
- * Runs scan → metadata pass for one library at a time (PLAN.md §6).
+ * Runs scan → metadata pass → feature background passes for one library at a time (PLAN.md §6).
  * - Asking to scan the library that is already *walking* reuses that run.
  * - Anything else cancels the current job first. Both steps are safe to interrupt:
  *   finished batches stay committed, and the metadata pass resumes from where it stopped.
@@ -124,6 +124,24 @@ export class ScanService {
           emit()
         }
       })
+
+      for (const hook of this.deps.hooks()) {
+        if (!hook.backgroundPass) continue
+        const pass = hook.backgroundPass
+        job.phase = 'tasks'
+        Object.assign(progress, { phase: 'tasks', taskLabel: pass.label, taskDone: 0, taskTotal: 0 })
+        emit(true)
+        await pass.run({
+          db: this.db,
+          library,
+          signal,
+          onProgress: (done, total) => {
+            progress.taskDone = done
+            progress.taskTotal = total
+            emit()
+          }
+        })
+      }
 
       progress.phase = 'done'
       emit(true)
