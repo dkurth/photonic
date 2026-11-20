@@ -2,7 +2,8 @@
 
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
-Status: **v0.10** (2026-11-20). **M0–M2 complete.**
+Status: **v0.11** (2026-11-20). **M0–M3 complete.**
+- v0.11: M3 built. Migration 002 adds `mark_events.undone`: undo flags events instead of deleting them, so the log stays a full history. Toolbar buttons never take keyboard focus, so Enter/Space can't trigger them by accident.
 - v0.10: M2 built. The position is saved on every move, not debounced (a debounce lost the last move on quit). `listIds` already supports every scope, filter and sort; the controls for them come in M4.
 - v0.9: M1 built. Change from the plan: new files are inserted right away, and a move hook *merges* a new row into its matching missing row afterwards (§6, §8). Scanning also refuses to run if the library folder is gone, and never flags photos missing under folders it couldn't read.
 - v0.8: M0 built. Dev builds use a separate `Photonic-dev` data folder. better-sqlite3 13 ships prebuilt binaries that work in both Node and Electron, so tests run under plain Node.
@@ -512,7 +513,7 @@ photonic/
 - **Theme foundation** (§12): neutral tokens + palette roles as CSS variables, bundled fonts, `.btn` raised-button style with `.pressed` triggered by the keyboard, the **Arcade** palette as default, and the palette contrast test
 - Last position saved and restored
 
-**M3 — Marking**
+**M3 — Marking** ✅ *done 2026-11-20*
 - `↑`/`↓` with jump to the next unreviewed photo, clear, `mark_events`, `Cmd+Z` undo (including batches), repeat-key guard, flash feedback
 - Counts, end-of-list summary screen
 - Tests: status transitions, next-unreviewed jumps, undo order

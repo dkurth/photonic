@@ -59,8 +59,68 @@
 .toolbar-right { justify-self: end; display: flex; gap: 12px; align-items: center; }
 
 .toast {
-  position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%);
+  position: fixed; left: 50%; top: 72px; transform: translateX(-50%); z-index: 10;
   background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: var(--radius);
   font-weight: 700; font-size: 14px; pointer-events: none;
 }
 .toast.error { background: var(--like); color: var(--on-like); max-width: 80%; }
+
+/* ---------- Status tag (notched ribbon) ---------- */
+.tag-slot { min-width: 0; }
+.infobar { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.status-tag {
+  --tag-bg: var(--surface);
+  --tag-ink: var(--muted);
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 22px 0 10px;
+  background: var(--tag-bg); color: var(--tag-ink);
+  border: var(--border-w) solid var(--ink);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 50%, 100% 100%, 0 100%);
+  font-size: 13px; white-space: nowrap;
+}
+.status-tag .pixel { font-size: 12px; font-weight: 700; }
+.status-tag.like { --tag-bg: var(--like); --tag-ink: var(--on-like); }
+.status-tag.meh { --tag-bg: var(--meh); --tag-ink: var(--on-meh); }
+
+/* ---------- Mark flash ---------- */
+.mark-flash {
+  position: absolute; inset: 0; pointer-events: none;
+  display: grid; place-items: center;
+  animation: mark-flash 320ms ease-out forwards;
+}
+.mark-flash.like { box-shadow: inset 0 0 0 10px var(--like); }
+.mark-flash.meh { box-shadow: inset 0 0 0 10px var(--meh); }
+.mark-flash.unreviewed { box-shadow: inset 0 0 0 10px #8a8a8a; }
+.mark-flash-badge {
+  font-size: 40px; padding: 10px 22px; border-radius: var(--radius);
+  border: var(--border-w) solid var(--ink); box-shadow: var(--lift) var(--lift) 0 var(--shadow);
+  animation: mark-badge 320ms ease-out forwards;
+}
+.mark-flash.like .mark-flash-badge { background: var(--like); color: var(--on-like); }
+.mark-flash.meh .mark-flash-badge { background: var(--meh); color: var(--on-meh); }
+@keyframes mark-flash { 0% { opacity: 1; } 60% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes mark-badge { 0% { transform: scale(0.85); } 30% { transform: scale(1.05); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .mark-flash, .mark-flash-badge { animation-duration: 1ms; animation-delay: 300ms; }
+}
+
+/* ---------- Done screen ---------- */
+.done-screen {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 18px;
+  background: color-mix(in srgb, var(--stage) 88%, transparent); color: #f2f2f2; text-align: center; padding: 24px;
+}
+.done-title { font-size: 40px; font-weight: 700; color: #fff; text-shadow: 3px 3px 0 var(--accent); -webkit-font-smoothing: none; }
+.done-scores { display: flex; gap: 18px; }
+.score {
+  display: grid; justify-items: center; gap: 4px; min-width: 150px; padding: 14px 18px;
+  border: var(--border-w) solid var(--ink); border-radius: var(--radius); box-shadow: var(--lift) var(--lift) 0 #000;
+}
+.score .pixel { font-size: 32px; font-weight: 700; }
+.score.like { background: var(--like); color: var(--on-like); }
+.score.meh { background: var(--meh); color: var(--on-meh); }
+.done-screen p { margin: 0; color: #e6e6e6; }
+
+/* ---------- Counts ---------- */
+.counts { gap: 14px; font-size: 13px; color: var(--muted); }
+.counts .pixel { color: var(--ink); font-size: 14px; }
+.count.like .pixel { color: var(--ink); }

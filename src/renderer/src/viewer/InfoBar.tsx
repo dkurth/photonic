@@ -1,5 +1,6 @@
 import type { PhotoMeta } from '@shared/types'
 import { Button } from '../components/Button'
+import { StatusTag } from '../components/StatusTag'
 import { dateLabel } from './format'
 
 /** Full path and date of the current photo. Always visible (PLAN.md §7). */
@@ -17,6 +18,7 @@ export function InfoBar({
   const date = meta ? dateLabel(meta) : null
   return (
     <section className="infobar" data-testid="infobar">
+      <div className="tag-slot">{meta && <StatusTag status={meta.status} />}</div>
       <div className="path" data-testid="path">
         {meta?.absPath ?? ' '}
       </div>

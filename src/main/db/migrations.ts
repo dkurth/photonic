@@ -1,4 +1,5 @@
 import init from './migrations/001_init.sql?raw'
+import undo from './migrations/002_undo.sql?raw'
 
 export interface Migration {
   /** Core migrations use 1–99; feature migrations use 100+ (enforced by the registry). */
@@ -9,4 +10,7 @@ export interface Migration {
 
 export const CORE_MAX_VERSION = 99
 
-export const coreMigrations: Migration[] = [{ version: 1, name: 'init', sql: init }]
+export const coreMigrations: Migration[] = [
+  { version: 1, name: 'init', sql: init },
+  { version: 2, name: 'undo', sql: undo }
+]

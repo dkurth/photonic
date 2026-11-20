@@ -1,12 +1,13 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import type { AppInfo, Library, ScanProgress, ViewSpec } from '@shared/types'
+import type { AppInfo, Library, ScanProgress, Scope, ViewSpec } from '@shared/types'
 import type { DB } from './db'
 import { schemaVersion } from './db'
 import { listBackups } from './db/backup'
 import type { FeatureRegistry } from './features/registry'
 import type { IpcRegistrar } from './features/types'
 import { addLibrary, getLibraryRow, libraryStats, listLibraries, toLibrary } from './library'
-import { listIds } from './ordering'
+import { isStatus, setStatus, undoLast } from './marks'
+import { listIds, listPhotos, statusCounts } from './ordering'
 import { getPhotoRow, toPhotoMeta } from './photos'
 import { ensureMetadata, type Extractor } from './scanner/metadata'
 import type { ScanService } from './scanner/service'
@@ -21,6 +22,13 @@ function str(v: unknown, what: string): string {
   return v
 }
 
+function scope(v: unknown): Scope {
+  const o = v as Scope
+  if (o?.kind === 'library') return { kind: 'library' }
+  if (o?.kind === 'folder' && typeof o.dirPath === 'string') return { kind: 'folder', dirPath: o.dirPath }
+  throw new Error('Invalid scope')
+}
+
 /** Checks the shape of a ViewSpec coming from the renderer. */
 function viewSpec(v: unknown): ViewSpec {
   const o = v as ViewSpec
@@ -28,9 +36,7 @@ function viewSpec(v: unknown): ViewSpec {
   id(o.libraryId)
   if (!['filename', 'date', 'random'].includes(o.sort)) throw new Error('Invalid sort')
   str(o.filter, 'filter')
-  if (o.scope?.kind === 'folder') {
-    if (typeof o.scope.dirPath !== 'string') throw new Error('Invalid scope')
-  } else if (o.scope?.kind !== 'library') throw new Error('Invalid scope')
+  scope(o.scope)
   if (o.seed !== undefined && !Number.isSafeInteger(o.seed)) throw new Error('Invalid seed')
   return o
 }
@@ -103,6 +109,20 @@ export function registerCoreIpc(ctx: {
   handle('libraries:stats', (libraryId) => libraryStats(db, id(libraryId)))
 
   handle('photos:listIds', (view) => listIds(db, viewSpec(view), ctx.features.filters()))
+
+  handle('photos:list', (view) => listPhotos(db, viewSpec(view), ctx.features.filters()))
+
+  handle('photos:counts', (libraryId, sc) => statusCounts(db, id(libraryId), scope(sc)))
+
+  handle('marks:set', (photoId, status) => {
+    if (!isStatus(status)) throw new Error('Invalid status')
+    const pid = id(photoId)
+    if (!setStatus(db, pid, status)) return null
+    const row = getPhotoRow(db, pid)
+    return row ? toPhotoMeta(row) : null
+  })
+
+  handle('marks:undo', (libraryId) => undoLast(db, id(libraryId)))
 
   handle('photos:get', async (photoId) => {
     const pid = id(photoId)

@@ -22,6 +22,11 @@ export class PhotoCache {
     this.metas.set(meta.id, Promise.resolve(meta))
   }
 
+  /** Forget one photo's metadata so it's fetched again next time. */
+  invalidate(id: number): void {
+    this.metas.delete(id)
+  }
+
   /** Starts loading + decoding the image so it can be shown without a flash. */
   preload(meta: PhotoMeta): void {
     if (this.images.has(meta.id) || meta.missing) return

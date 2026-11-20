@@ -20,9 +20,15 @@ const api: PhotonicAPI = {
   },
   photos: {
     listIds: (view) => ipcRenderer.invoke('photos:listIds', view),
+    list: (view) => ipcRenderer.invoke('photos:list', view),
+    counts: (libraryId, scope) => ipcRenderer.invoke('photos:counts', libraryId, scope),
     get: (id) => ipcRenderer.invoke('photos:get', id),
     revealInFinder: (id) => ipcRenderer.invoke('photos:revealInFinder', id),
     copyPath: (id) => ipcRenderer.invoke('photos:copyPath', id)
+  },
+  marks: {
+    set: (photoId, status) => ipcRenderer.invoke('marks:set', photoId, status),
+    undo: (libraryId) => ipcRenderer.invoke('marks:undo', libraryId)
   },
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),

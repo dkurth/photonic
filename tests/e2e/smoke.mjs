@@ -78,6 +78,9 @@ const imageLoaded = (win) =>
     const img = document.querySelector('[data-testid=stage] img')
     return img && img.complete && img.naturalWidth > 0
   })
+const waitPath = (win, suffix) =>
+  win.waitForFunction((sfx) => document.querySelector('[data-testid=path]')?.textContent.endsWith(sfx), suffix)
+const tagStatus = (win) => win.getByTestId('status-tag').getAttribute('data-status')
 const stats = (win) => win.evaluate(async () => window.photonic.libraries.stats((await window.photonic.libraries.last()).id))
 
 try {
@@ -182,6 +185,87 @@ try {
       assert.equal(await load('photo://img/999999'), 'error')
       assert.equal(await load(await win.locator('[data-testid=stage] img').getAttribute('src')), 'loaded')
     })
+
+    // ---- M3: marking ----
+    await step('↑ Likes and jumps to the next unreviewed photo', async () => {
+      await win.keyboard.press('Home')
+      await waitPath(win, 'broken.jpg')
+      await win.keyboard.press('ArrowUp')
+      await waitPath(win, 'top.jpg')
+      assert.equal((await stats(win)).like, 1)
+    })
+
+    await step('↓ Mehs and moves on', async () => {
+      await win.keyboard.press('ArrowDown')
+      await waitPath(win, 'IMG_0001.jpg')
+      assert.equal((await stats(win)).meh, 1)
+    })
+
+    await step('holding ↑ marks once, not repeatedly', async () => {
+      await win.keyboard.down('ArrowUp') // likes IMG_0001 → IMG_0002
+      await waitPath(win, 'IMG_0002.jpg')
+      await win.keyboard.down('ArrowUp') // auto-repeat: must be ignored
+      await win.keyboard.down('ArrowUp')
+      await win.keyboard.up('ArrowUp')
+      await win.waitForTimeout(200)
+      assert.match(await text(win, 'path'), /IMG_0002\.jpg$/)
+      assert.equal(await tagStatus(win), 'unreviewed')
+      assert.equal((await stats(win)).like, 2)
+    })
+
+    await step('⌘Z undoes the last mark and goes back to that photo', async () => {
+      await win.keyboard.press('Meta+z')
+      await waitPath(win, 'IMG_0001.jpg')
+      await win.waitForFunction(() => document.querySelector('[data-testid=status-tag]')?.dataset.status === 'unreviewed')
+      assert.equal((await stats(win)).like, 1)
+    })
+
+    await step('reaching the end shows the done screen', async () => {
+      await win.keyboard.press('ArrowDown') // IMG_0001 meh → IMG_0002
+      await waitPath(win, 'IMG_0002.jpg')
+      await win.keyboard.press('ArrowDown') // IMG_0002 meh → beach.png
+      await waitPath(win, 'beach.png')
+      await win.keyboard.press('ArrowUp') // beach like → nothing unreviewed left
+      await win.getByTestId('done-screen').waitFor()
+      assert.match(await text(win, 'done-screen'), /LIBRARY CLEAR!/)
+      assert.match(await text(win, 'done-screen'), /Press\s+←\s+to go back/)
+      await shot(win, 'm3-done')
+    })
+
+    await step('U clears a mark; done screen offers to jump back to it with Enter', async () => {
+      await win.keyboard.press('ArrowLeft') // close the done screen
+      await win.keyboard.press('Home')
+      await waitPath(win, 'broken.jpg')
+      await win.keyboard.press('u')
+      await win.waitForFunction(() => document.querySelector('[data-testid=status-tag]')?.dataset.status === 'unreviewed')
+      await win.keyboard.press('End')
+      await waitPath(win, 'beach.png')
+      await win.keyboard.press('ArrowUp') // already liked; still nothing unreviewed after it
+      await win.getByTestId('done-screen').waitFor()
+      assert.match(await text(win, 'done-screen'), /1 unreviewed earlier/)
+      await win.keyboard.press('Enter')
+      await waitPath(win, 'broken.jpg')
+      const s = await stats(win)
+      assert.deepEqual([s.like, s.meh, s.unreviewed], [1, 3, 1])
+    })
+
+    await step('Like/Meh buttons work by clicking too', async () => {
+      await win.getByRole('button', { name: /Like/ }).click()
+      await win.getByTestId('done-screen').waitFor()
+      assert.equal((await stats(win)).like, 2)
+      await win.keyboard.press('Meta+z')
+      await waitPath(win, 'broken.jpg')
+      // Regression: stale <img>s once piled up in the stage (duplicate React keys).
+      await win.waitForSelector("text=Can't display this file.")
+      assert.equal(await win.locator('[data-testid=stage] img').count(), 0)
+      await win.keyboard.press('ArrowRight')
+      await waitPath(win, 'top.jpg')
+      await imageLoaded(win)
+      assert.equal(await win.locator('[data-testid=stage] img').count(), 1)
+      await win.waitForSelector('.mark-flash', { state: 'detached' })
+      assert.equal(await win.evaluate(() => document.activeElement?.tagName), 'BODY', 'buttons must not keep focus')
+      await shot(win, 'm3-viewer')
+    })
     await app.close()
   }
 
@@ -191,13 +275,22 @@ try {
   {
     const { app, win } = await launch()
     await step('relaunch reopens the library at the same photo', async () => {
-      await win.waitForFunction(() => document.querySelector('[data-testid=path]')?.textContent.endsWith('top.jpg'))
+      await waitPath(win, 'broken.jpg')
     })
     await step('rescan on open picks up added and deleted files', async () => {
-      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
+      // the Unreviewed view now holds broken.jpg plus the newly added 2021/new.jpg
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 2'))
       const s = await stats(win)
       assert.equal(s.missing, 1)
       assert.equal(s.total, 5)
+    })
+    await step('marks survive a restart (missing photos keep theirs too)', async () => {
+      const marked = await win.evaluate(async () => {
+        const lib = await window.photonic.libraries.last()
+        return window.photonic.photos.counts(lib.id, { kind: 'library' })
+      })
+      // beach liked; top, IMG_0001 meh (IMG_0002 meh is now missing, so not counted); broken + new.jpg unreviewed
+      assert.deepEqual([marked.like, marked.meh, marked.unreviewed], [1, 2, 2])
     })
     await app.close()
   }

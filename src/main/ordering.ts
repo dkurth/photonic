@@ -1,4 +1,4 @@
-import type { Scope, SortOrder, ViewSpec } from '@shared/types'
+import type { PhotoList, Scope, SortOrder, Status, StatusCounts, ViewSpec } from '@shared/types'
 import type { DB } from './db'
 import { displayDate } from './photos'
 
@@ -66,6 +66,11 @@ function scopeSql(scope: Scope): { where: string; params: unknown[] } {
  * photos are in a view. Missing photos are never included.
  */
 export function listIds(db: DB, view: ViewSpec, extraFilters: Record<string, FilterImpl> = {}): number[] {
+  return listPhotos(db, view, extraFilters).ids
+}
+
+/** listIds plus each photo's status, in the same order. */
+export function listPhotos(db: DB, view: ViewSpec, extraFilters: Record<string, FilterImpl> = {}): PhotoList {
   let filter: { where: string; params: unknown[] }
   if (view.filter in CORE_FILTERS) filter = { where: CORE_FILTERS[view.filter], params: [] }
   else if (extraFilters[view.filter]) filter = extraFilters[view.filter](view.libraryId)
@@ -74,7 +79,7 @@ export function listIds(db: DB, view: ViewSpec, extraFilters: Record<string, Fil
   const scope = scopeSql(view.scope)
   const rows = db
     .prepare(
-      `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms FROM photos p
+      `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms, p.status FROM photos p
        WHERE p.library_id = ? AND p.missing = 0 AND ${scope.where} AND ${filter.where}`
     )
     .all(view.libraryId, ...scope.params, ...filter.params) as {
@@ -83,9 +88,25 @@ export function listIds(db: DB, view: ViewSpec, extraFilters: Record<string, Fil
     taken_at: string | null
     birthtime_ms: number | null
     mtime_ms: number
+    status: Status
   }[]
 
-  return sortRows(rows, view.sort, view.seed ?? 1).map((r) => r.id)
+  const sorted = sortRows(rows, view.sort, view.seed ?? 1)
+  return { ids: sorted.map((r) => r.id), statuses: sorted.map((r) => r.status) }
+}
+
+/** Status counts for a library, or one folder of it (missing photos excluded). */
+export function statusCounts(db: DB, libraryId: number, scope: Scope): StatusCounts {
+  const s = scopeSql(scope)
+  return db
+    .prepare(
+      `SELECT count(*) AS total,
+         count(*) FILTER (WHERE p.status = 'unreviewed') AS unreviewed,
+         count(*) FILTER (WHERE p.status = 'like') AS "like",
+         count(*) FILTER (WHERE p.status = 'meh') AS meh
+       FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${s.where}`
+    )
+    .get(libraryId, ...s.params) as StatusCounts
 }
 
 function sortRows<T extends { id: number; rel_path: string; taken_at: string | null; birthtime_ms: number | null; mtime_ms: number }>(

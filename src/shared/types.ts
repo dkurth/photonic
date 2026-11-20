@@ -50,6 +50,24 @@ export interface ScanProgress {
 
 export type Unsubscribe = () => void
 
+export interface StatusCounts {
+  total: number
+  unreviewed: number
+  like: number
+  meh: number
+}
+
+/** A view's photo IDs with their statuses (same order), so the renderer can find the next unreviewed photo. */
+export interface PhotoList {
+  ids: number[]
+  statuses: Status[]
+}
+
+export interface UndoResult {
+  /** Photos whose status was restored, most recent change first. */
+  changes: { photoId: number; status: Status }[]
+}
+
 export type SortOrder = 'filename' | 'date' | 'random'
 export type Scope = { kind: 'library' } | { kind: 'folder'; dirPath: string }
 /** Core filters; optional features may add more (e.g. 'duplicates'). */
@@ -108,10 +126,19 @@ export interface PhotonicAPI {
   photos: {
     /** The ordered photo IDs for a view. This is the only place that decides what's in a view. */
     listIds(view: ViewSpec): Promise<number[]>
+    /** listIds plus each photo's status. */
+    list(view: ViewSpec): Promise<PhotoList>
+    counts(libraryId: number, scope: Scope): Promise<StatusCounts>
     /** Reads the photo's EXIF first if that hasn't happened yet, so the date is always real. */
     get(id: number): Promise<PhotoMeta | null>
     revealInFinder(id: number): Promise<void>
     copyPath(id: number): Promise<void>
+  }
+  marks: {
+    /** Sets a photo's status and logs it (for undo). Returns the updated photo. */
+    set(photoId: number, status: Status): Promise<PhotoMeta | null>
+    /** Undoes the most recent change in the library — a whole batch if it was a bulk action. */
+    undo(libraryId: number): Promise<UndoResult | null>
   }
   settings: {
     get<T>(key: string): Promise<T | null>

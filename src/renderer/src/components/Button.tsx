@@ -21,7 +21,17 @@ export function Button({ children, keys, variant = 'plain', size = 'normal', pre
     .filter(Boolean)
     .join(' ')
   return (
-    <button type="button" className={cls} disabled={disabled} title={title} onClick={onClick} tabIndex={-1}>
+    <button
+      type="button"
+      className={cls}
+      disabled={disabled}
+      title={title}
+      onClick={onClick}
+      tabIndex={-1}
+      // Don't take focus on click: a focused button would also be "clicked" by Enter/Space,
+      // which are keyboard shortcuts here.
+      onMouseDown={(e) => e.preventDefault()}
+    >
       {children}
       {keys?.map((k) => <KeyCap key={k} k={k} />)}
     </button>

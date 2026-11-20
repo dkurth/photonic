@@ -38,15 +38,25 @@ describe('openDatabase', () => {
 describe('migrate', () => {
   it('applies core migrations once and is idempotent', () => {
     const db = openDatabase(':memory:')
-    expect(migrate(db, coreMigrations)).toEqual([1])
+    expect(migrate(db, coreMigrations)).toEqual([1, 2])
     expect(migrate(db, coreMigrations)).toEqual([])
-    expect(schemaVersion(db)).toBe(1)
+    expect(schemaVersion(db)).toBe(2)
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .pluck()
       .all()
     expect(tables).toEqual(['libraries', 'mark_events', 'photos', 'schema_migrations', 'settings'])
+  })
+
+  it('upgrades an existing v1 database to the latest version, keeping its data', () => {
+    const db = openDatabase(':memory:')
+    migrate(db, coreMigrations.filter((m) => m.version === 1))
+    db.prepare("INSERT INTO libraries (root_path, name) VALUES ('/p', 'p')").run()
+    expect(migrate(db, coreMigrations)).toEqual([2])
+    expect(db.prepare('SELECT count(*) FROM libraries').pluck().get()).toBe(1)
+    const cols = db.prepare('PRAGMA table_info(mark_events)').all() as { name: string }[]
+    expect(cols.map((c) => c.name)).toContain('undone')
   })
 
   it('applies migrations in version order regardless of array order', () => {
