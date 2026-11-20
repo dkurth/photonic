@@ -1,4 +1,4 @@
-import type { PhotoList, SortOrder, Status, StatusCounts, ViewSpec } from '@shared/types'
+import type { PhotoList, PlaylistId, SortOrder, StatusCounts, ViewSpec } from '@shared/types'
 import type { DB } from './db'
 import { visibleSql } from './marks'
 import { displayDate } from './photos'
@@ -23,9 +23,7 @@ export interface Visibility {
 
 const CORE_FILTERS: Record<string, string> = {
   all: '1 = 1',
-  unreviewed: "p.status = 'unreviewed'",
-  like: "p.status = 'like'",
-  meh: "p.status = 'meh'"
+  unreviewed: 'p.playlist_id IS NULL'
 }
 
 const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' })
@@ -81,7 +79,7 @@ export function listIds(
   return listPhotos(db, view, extraFilters, vis).ids
 }
 
-/** listIds plus each photo's status, in the same order. */
+/** listIds plus each photo's playlist, in the same order. */
 export function listPhotos(
   db: DB,
   view: ViewSpec,
@@ -89,13 +87,15 @@ export function listPhotos(
   vis: Visibility = {}
 ): PhotoList {
   let filter: ReturnType<FilterImpl>
-  if (view.filter in CORE_FILTERS) filter = { where: CORE_FILTERS[view.filter], params: [] }
+  const playlist = /^playlist:(\d+)$/.exec(view.filter)
+  if (playlist) filter = { where: 'p.playlist_id = ?', params: [Number(playlist[1])] }
+  else if (view.filter in CORE_FILTERS) filter = { where: CORE_FILTERS[view.filter], params: [] }
   else if (extraFilters[view.filter]) filter = extraFilters[view.filter](view.libraryId)
   else throw new Error(`Unknown filter: ${view.filter}`)
 
   const rows = db
     .prepare(
-      `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms, p.status, ${filter.groupBy ?? 'NULL'} AS grp FROM photos p
+      `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms, p.playlist_id, ${filter.groupBy ?? 'NULL'} AS grp FROM photos p
        WHERE p.library_id = ? AND p.missing = 0 AND ${filter.where}
          AND ${filter.includeHidden ? '1 = 1' : visibleSql('p', vis.hideReasons ?? [])}`
     )
@@ -105,13 +105,13 @@ export function listPhotos(
     taken_at: string | null
     birthtime_ms: number | null
     mtime_ms: number
-    status: Status
+    playlist_id: PlaylistId
     grp: unknown
   }[]
 
   let sorted = sortRows(rows, view.sort, view.seed ?? 1)
   if (filter.groupBy) sorted = clusterGroups(sorted)
-  return { ids: sorted.map((r) => r.id), statuses: sorted.map((r) => r.status) }
+  return { ids: sorted.map((r) => r.id), playlists: sorted.map((r) => r.playlist_id) }
 }
 
 /** Stable clustering: each group moves up to where its first member is. */
@@ -125,17 +125,22 @@ function clusterGroups<T extends { grp: unknown }>(rows: T[]): T[] {
   return [...groups.values()].flat()
 }
 
-/** Status counts for a library (missing and hidden photos excluded). */
+/** Counts for a library: total, unreviewed and per playlist (missing and hidden photos excluded). */
 export function statusCounts(db: DB, libraryId: number, vis: Visibility = {}): StatusCounts {
-  return db
+  const rows = db
     .prepare(
-      `SELECT count(*) AS total,
-         count(*) FILTER (WHERE p.status = 'unreviewed') AS unreviewed,
-         count(*) FILTER (WHERE p.status = 'like') AS "like",
-         count(*) FILTER (WHERE p.status = 'meh') AS meh
-       FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${visibleSql('p', vis.hideReasons ?? [])}`
+      `SELECT p.playlist_id AS pl, count(*) AS n FROM photos p
+       WHERE p.library_id = ? AND p.missing = 0 AND ${visibleSql('p', vis.hideReasons ?? [])}
+       GROUP BY p.playlist_id`
     )
-    .get(libraryId) as StatusCounts
+    .all(libraryId) as { pl: number | null; n: number }[]
+  const counts: StatusCounts = { total: 0, unreviewed: 0, byPlaylist: {} }
+  for (const r of rows) {
+    counts.total += r.n
+    if (r.pl === null) counts.unreviewed = r.n
+    else counts.byPlaylist[r.pl] = r.n
+  }
+  return counts
 }
 
 function sortRows<

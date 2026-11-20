@@ -47,7 +47,7 @@ describe('toPhotoMeta', () => {
     const m = toPhotoMeta(getPhotoRow(db, id('2019/a.jpg'))!)
     expect(m.absPath).toBe(join(addLibrary(db, root).root_path, '2019/a.jpg'))
     expect(m.url).toMatch(new RegExp(`^photo://img/${m.id}\\?v=\\d+$`))
-    expect(m).toMatchObject({ status: 'unreviewed', dirPath: '2019', missing: false })
+    expect(m).toMatchObject({ playlistId: null, dirPath: '2019', missing: false })
   })
 })
 

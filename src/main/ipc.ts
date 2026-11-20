@@ -7,7 +7,17 @@ import type { FeatureRegistry } from './features/registry'
 import type { IpcRegistrar } from './features/types'
 import { addLibrary, getLibraryRow, libraryStats, listLibraries, toLibrary } from './library'
 import { markFolder, resolveFolder } from './folderMarks'
-import { isStatus, setStatus, undoLast } from './marks'
+import { setPlaylist, undoLast } from './marks'
+import {
+  builtinId,
+  createPlaylist,
+  deletePlaylist,
+  getPlaylist,
+  listPlaylists,
+  renamePlaylist,
+  resetShortcuts,
+  setShortcut
+} from './playlists'
 import { listIds, listPhotos, statusCounts } from './ordering'
 import { getPhotoRow, toPhotoMeta } from './photos'
 import { ensureMetadata, type Extractor } from './scanner/metadata'
@@ -25,14 +35,28 @@ function str(v: unknown, what: string): string {
 }
 
 /** Checks the shape of a ViewSpec coming from the renderer, keeping only known fields. */
-function viewSpec(v: unknown): ViewSpec {
+function viewSpec(db: DB, v: unknown): ViewSpec {
   const o = v as ViewSpec
   if (!o || typeof o !== 'object') throw new Error('Invalid view')
   id(o.libraryId)
   if (!['filename', 'date', 'random'].includes(o.sort)) throw new Error('Invalid sort')
-  str(o.filter, 'filter')
+  let filter = str(o.filter, 'filter')
+  // Views saved before playlists used 'like' / 'meh' as filters.
+  if (filter === 'like' || filter === 'meh') filter = `playlist:${builtinId(db, filter)}`
   if (o.seed !== undefined && !Number.isSafeInteger(o.seed)) throw new Error('Invalid seed')
-  return { libraryId: o.libraryId, filter: o.filter, sort: o.sort, seed: o.seed }
+  return { libraryId: o.libraryId, filter, sort: o.sort, seed: o.seed }
+}
+
+/** A playlist id from the renderer (null = Unreviewed) that must exist. */
+function playlistArg(db: DB, v: unknown, allowNull: boolean): number | null {
+  if (v === null && allowNull) return null
+  const pid = id(v)
+  if (!getPlaylist(db, pid)) throw new Error(`Playlist ${pid} not found`)
+  return pid
+}
+
+function broadcastPlaylistsChanged(): void {
+  for (const w of BrowserWindow.getAllWindows()) w.webContents.send('playlists:changed')
 }
 
 /** IPC arguments come from the renderer; never trust their shape. */
@@ -105,16 +129,15 @@ export function registerCoreIpc(ctx: {
 
   handle('libraries:stats', (libraryId) => libraryStats(db, id(libraryId), vis))
 
-  handle('photos:listIds', (view) => listIds(db, viewSpec(view), ctx.features.filters(), vis))
+  handle('photos:listIds', (view) => listIds(db, viewSpec(db, view), ctx.features.filters(), vis))
 
-  handle('photos:list', (view) => listPhotos(db, viewSpec(view), ctx.features.filters(), vis))
+  handle('photos:list', (view) => listPhotos(db, viewSpec(db, view), ctx.features.filters(), vis))
 
   handle('photos:counts', (libraryId) => statusCounts(db, id(libraryId), vis))
 
-  handle('marks:set', (photoId, status) => {
-    if (!isStatus(status)) throw new Error('Invalid status')
+  handle('marks:set', (photoId, playlistId) => {
     const pid = id(photoId)
-    if (!setStatus(db, pid, status)) return null
+    if (!setPlaylist(db, pid, playlistArg(db, playlistId, true))) return null
     const row = getPhotoRow(db, pid)
     return row ? toPhotoMeta(row) : null
   })
@@ -157,12 +180,28 @@ export function registerCoreIpc(ctx: {
     return res.canceled ? null : (res.filePaths[0] ?? null)
   })
 
-  handle('folders:mark', (libraryId, dirPath, status, mode) => {
+  handle('folders:mark', (libraryId, dirPath, playlistId, mode) => {
     if (typeof dirPath !== 'string') throw new Error('Invalid folder')
-    if (status !== 'like' && status !== 'meh') throw new Error('Invalid status')
     if (mode !== 'all' && mode !== 'unreviewed') throw new Error('Invalid mode')
-    return markFolder(db, id(libraryId), dirPath, status, mode, vis)
+    return markFolder(db, id(libraryId), dirPath, playlistArg(db, playlistId, false)!, mode, vis)
   })
+
+  // Playlists (PLAN.md §12). Every change is broadcast so all views refresh their lists and keys.
+  const changed = <T>(result: T): T => (broadcastPlaylistsChanged(), result)
+  handle('playlists:list', () => listPlaylists(db))
+  handle('playlists:create', (name) => changed(createPlaylist(db, str(name, 'name'))))
+  handle('playlists:rename', (pid, name) => changed(renamePlaylist(db, id(pid), str(name, 'name'))))
+  handle('playlists:setShortcut', (pid, key) => {
+    if (key !== null && (typeof key !== 'string' || key.length === 0 || key.length > 20)) throw new Error('Invalid key')
+    setShortcut(db, id(pid), key as string | null)
+    return changed(listPlaylists(db))
+  })
+  handle('playlists:resetShortcuts', (systemKeys) => {
+    if (!Array.isArray(systemKeys) || !systemKeys.every((k) => typeof k === 'string')) throw new Error('Invalid keys')
+    resetShortcuts(db, systemKeys as string[])
+    return changed(listPlaylists(db))
+  })
+  handle('playlists:remove', (pid, moveTo) => changed(deletePlaylist(db, id(pid), playlistArg(db, moveTo, true))))
 
   handle('settings:get', (key) => getSetting(db, str(key, 'key')))
   handle('settings:set', (key, value) => setSetting(db, str(key, 'key'), value))

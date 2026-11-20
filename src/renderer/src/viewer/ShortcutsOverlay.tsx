@@ -1,48 +1,22 @@
-import { STATUS_LABELS } from '@shared/labels'
+import type { Playlist } from '@shared/types'
+import { playlistEmoticon } from '@shared/labels'
+import { keyLabel } from '@shared/shortcuts'
 import { KeyCap } from '../components/KeyCap'
+import type { SystemShortcut } from './shortcuts'
 
-export interface ShortcutGroup {
-  title: string
-  items: { keys: string[]; label: string }[]
-}
+const GROUPS: SystemShortcut['group'][] = ['Review', 'View', 'Photo & window']
 
-export const CORE_SHORTCUTS: ShortcutGroup[] = [
-  {
-    title: 'Review',
-    items: [
-      { keys: ['↑'], label: `Like ${STATUS_LABELS.like.emoticon}` },
-      { keys: ['↓'], label: `Meh ${STATUS_LABELS.meh.emoticon}` },
-      { keys: ['←', '→'], label: 'Previous / next photo' },
-      { keys: ['U'], label: 'Clear the mark' },
-      { keys: ['⌘Z'], label: 'Undo' },
-      { keys: ['Home', 'End'], label: 'First / last photo' }
-    ]
-  },
-  {
-    title: 'View',
-    items: [
-      { keys: ['1', '2', '3', '4'], label: 'All / Unreviewed / Like / Meh' },
-      { keys: ['S'], label: 'Order: filename → date → random' },
-      { keys: ['R'], label: 'Reshuffle (random order)' },
-      { keys: ['Space'], label: 'Zoom to 100% (drag to pan)' }
-    ]
-  },
-  {
-    title: 'Photo & window',
-    items: [
-      { keys: ['C'], label: 'Copy full path' },
-      { keys: ['O'], label: 'Show in Finder' },
-      { keys: ['F'], label: 'Like / Meh a whole folder' },
-      { keys: ['H'], label: 'Hide / show toolbars' },
-      { keys: ['⌘O'], label: 'Open a folder' },
-      { keys: ['⌘L'], label: 'Switch library' },
-      { keys: ['?'], label: 'This list' }
-    ]
-  }
-]
-
-export function ShortcutsOverlay({ extra, onClose }: { extra: ShortcutGroup['items']; onClose: () => void }) {
-  const groups = extra.length ? [...CORE_SHORTCUTS, { title: 'Duplicates', items: extra }] : CORE_SHORTCUTS
+/** `?`: every shortcut, including playlist keys. An app shortcut a playlist took over is struck through. */
+export function ShortcutsOverlay({
+  system,
+  playlists,
+  onClose
+}: {
+  system: SystemShortcut[]
+  playlists: Playlist[]
+  onClose: () => void
+}) {
+  const byKey = new Map(playlists.filter((p) => p.shortcut).map((p) => [p.shortcut!, p]))
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
@@ -53,19 +27,65 @@ export function ShortcutsOverlay({ extra, onClose }: { extra: ShortcutGroup['ite
       >
         <div className="modal-title pixel">KEYBOARD SHORTCUTS</div>
         <div className="shortcut-groups">
-          {groups.map((g) => (
-            <section key={g.title}>
-              <h4>{g.title}</h4>
-              {g.items.map((it) => (
-                <div key={it.label} className="shortcut">
+          <section>
+            <h4>Playlists</h4>
+            {playlists
+              .filter((p) => p.shortcut)
+              .map((p) => (
+                <div key={p.id} className="shortcut">
                   <span className="shortcut-keys">
-                    {it.keys.map((k) => (
-                      <KeyCap key={k} k={k} />
-                    ))}
+                    <KeyCap k={keyLabel(p.shortcut!)} />
                   </span>
-                  <span>{it.label}</span>
+                  <span>
+                    {p.name} {playlistEmoticon(p)}
+                  </span>
                 </div>
               ))}
+            <div className="shortcut note">Change these in Playlists → Manage Playlists…</div>
+          </section>
+          {GROUPS.map((g) => (
+            <section key={g}>
+              <h4>{g}</h4>
+              {system
+                .filter((s) => s.group === g)
+                .map((s) => {
+                  const takenBy = byKey.get(s.key)
+                  return (
+                    <div key={`${s.key}-${s.label}`} className={`shortcut ${takenBy ? 'taken' : ''}`}>
+                      <span className="shortcut-keys">
+                        <KeyCap k={keyLabel(s.key)} />
+                      </span>
+                      <span>
+                        {s.label}
+                        {takenBy && <span className="note"> — now {takenBy.name}</span>}
+                      </span>
+                    </div>
+                  )
+                })}
+              {g === 'Review' && (
+                <div className="shortcut">
+                  <span className="shortcut-keys">
+                    <KeyCap k="⌘Z" />
+                  </span>
+                  <span>Undo</span>
+                </div>
+              )}
+              {g === 'Photo & window' && (
+                <>
+                  <div className="shortcut">
+                    <span className="shortcut-keys">
+                      <KeyCap k="⌘O" />
+                    </span>
+                    <span>Open a folder</span>
+                  </div>
+                  <div className="shortcut">
+                    <span className="shortcut-keys">
+                      <KeyCap k="⌘L" />
+                    </span>
+                    <span>Switch library</span>
+                  </div>
+                </>
+              )}
             </section>
           ))}
         </div>

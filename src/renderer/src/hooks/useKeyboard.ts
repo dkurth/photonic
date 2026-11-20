@@ -7,7 +7,13 @@ export type KeyHandler = (e: KeyboardEvent) => void
  * Keys are ignored while typing in a text field, and when Cmd/Ctrl/Alt is held unless the map
  * names the combination explicitly as 'Mod+z' (Cmd on macOS, Ctrl elsewhere).
  */
-export function useKeyboard(map: Record<string, KeyHandler>, enabled = true): void {
+export function useKeyboard(
+  map: Record<string, KeyHandler>,
+  enabled = true,
+  /** Capture phase: runs before every non-capture listener, so these keys take priority (playlist keys). */
+  opts: { capture?: boolean } = {}
+): void {
+  const capture = opts.capture ?? false
   const ref = useRef(map)
   ref.current = map
   // Read at event time (not via effect re-subscription), so enabling/disabling takes effect on the
@@ -30,7 +36,7 @@ export function useKeyboard(map: Record<string, KeyHandler>, enabled = true): vo
       e.preventDefault()
       handler(e)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    window.addEventListener('keydown', onKey, capture)
+    return () => window.removeEventListener('keydown', onKey, capture)
+  }, [capture])
 }

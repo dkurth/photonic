@@ -8,7 +8,7 @@ import { markFolder, resolveFolder } from '../src/main/folderMarks'
 import { addLibrary } from '../src/main/library'
 import { setHidden, undoLast } from '../src/main/marks'
 import { scanLibrary } from '../src/main/scanner/scan'
-import { makeTree, tempDir } from './helpers'
+import { LIKE, MEH, makeTree, tempDir } from './helpers'
 
 async function setup() {
   const root = tempDir()
@@ -26,9 +26,16 @@ async function setup() {
   const lib = addLibrary(db, root)
   await scanLibrary(db, lib)
   const status = (p: string): string =>
-    db.prepare('SELECT status FROM photos WHERE rel_path = ?').pluck().get(p) as string
+    db
+      .prepare(
+        "SELECT COALESCE((SELECT builtin FROM playlists WHERE id = photos.playlist_id), 'unreviewed') FROM photos WHERE rel_path = ?"
+      )
+      .pluck()
+      .get(p) as string
   const set = (p: string, s: string): void =>
-    void db.prepare('UPDATE photos SET status = ? WHERE rel_path = ?').run(s, p)
+    void db
+      .prepare('UPDATE photos SET playlist_id = (SELECT id FROM playlists WHERE builtin = ?) WHERE rel_path = ?')
+      .run(s, p)
   return { db, lib, root: lib.root_path, status, set }
 }
 
@@ -37,7 +44,7 @@ describe('resolveFolder', () => {
     const { db, lib, root, set } = await setup()
     set('F/a.jpg', 'like')
     const r = resolveFolder(db, lib.id, join(root, 'F'))
-    expect(r).toEqual({ dirPath: 'F', absPath: join(root, 'F'), total: 4, unreviewed: 3, like: 1, meh: 0 })
+    expect(r).toEqual({ dirPath: 'F', absPath: join(root, 'F'), total: 4, unreviewed: 3, byPlaylist: { [LIKE]: 1 } })
   })
 
   it('accepts paths relative to the library, trailing slashes, and the root itself', async () => {
@@ -88,7 +95,7 @@ describe('markFolder', () => {
     const { db, lib, status, set } = await setup()
     set('F/a.jpg', 'like')
     set('F/b.jpg', 'meh')
-    const r = markFolder(db, lib.id, 'F', 'meh', 'all')
+    const r = markFolder(db, lib.id, 'F', MEH, 'all')
     expect(r.changed).toBe(3) // b was already Meh
     for (const p of ['F/a.jpg', 'F/b.jpg', 'F/c.jpg', 'F/sub/d.jpg']) expect(status(p)).toBe('meh')
     expect(status('F-other/e.jpg')).toBe('unreviewed')
@@ -98,7 +105,7 @@ describe('markFolder', () => {
   it("'unreviewed' leaves already-marked photos alone", async () => {
     const { db, lib, status, set } = await setup()
     set('F/a.jpg', 'like')
-    const r = markFolder(db, lib.id, 'F', 'meh', 'unreviewed')
+    const r = markFolder(db, lib.id, 'F', MEH, 'unreviewed')
     expect(r.changed).toBe(3)
     expect(status('F/a.jpg')).toBe('like')
     expect(status('F/c.jpg')).toBe('meh')
@@ -107,9 +114,9 @@ describe('markFolder', () => {
   it('one undo reverts the whole folder, restoring each photo exactly', async () => {
     const { db, lib, set } = await setup()
     set('F/a.jpg', 'like')
-    const snapshot = (): unknown => db.prepare('SELECT id, status FROM photos ORDER BY id').all()
+    const snapshot = (): unknown => db.prepare('SELECT id, playlist_id FROM photos ORDER BY id').all()
     const before = snapshot()
-    markFolder(db, lib.id, 'F', 'meh', 'all')
+    markFolder(db, lib.id, 'F', MEH, 'all')
     expect(undoLast(db, lib.id)!.changes).toHaveLength(4)
     expect(snapshot()).toEqual(before)
   })
@@ -119,13 +126,13 @@ describe('markFolder', () => {
     const id = (p: string): number => db.prepare('SELECT id FROM photos WHERE rel_path = ?').pluck().get(p) as number
     setHidden(db, id('F/a.jpg'), true, 'duplicate')
     db.prepare("UPDATE photos SET missing = 1 WHERE rel_path = 'F/b.jpg'").run()
-    expect(markFolder(db, lib.id, 'F', 'like', 'all', { hideReasons: ['duplicate'] }).changed).toBe(2)
+    expect(markFolder(db, lib.id, 'F', LIKE, 'all', { hideReasons: ['duplicate'] }).changed).toBe(2)
     expect(status('F/a.jpg')).toBe('unreviewed')
     expect(status('F/b.jpg')).toBe('unreviewed')
   })
 
   it('nothing to change → no batch', async () => {
     const { db, lib } = await setup()
-    expect(markFolder(db, lib.id, 'empty', 'like', 'all')).toEqual({ changed: 0, batchId: null })
+    expect(markFolder(db, lib.id, 'empty', LIKE, 'all')).toEqual({ changed: 0, batchId: null })
   })
 })

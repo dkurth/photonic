@@ -45,7 +45,7 @@ function isUnder(dirPath: string, parent: string): boolean {
 
 /**
  * Brings the `photos` table in line with what's on disk for one library (PLAN.md §6).
- * Never changes a photo's status. Rows are only ever flagged missing, never deleted.
+ * Never changes which playlist a photo is in. Rows are only ever flagged missing, never deleted.
  * If the root folder can't be read, throws before touching the DB, so an unplugged
  * drive doesn't flag the whole library as missing.
  */
@@ -181,12 +181,12 @@ function selectScanPhotos(db: DB, where: string, param: unknown): ScanPhoto[] {
 
 /**
  * Re-attaches each missing row to the path of a newly added row, keeping the missing row's
- * id, status and history, and deletes the (brand-new, unreviewed) added row.
+ * id, playlist and history, and deletes the (brand-new, unreviewed) added row.
  * Invalid pairs are ignored. Returns the pairs that were applied.
  */
 export function applyMoves(db: DB, libraryId: number, pairs: MovePair[]): MovePair[] {
   const getRow = db.prepare(
-    'SELECT id, library_id, rel_path, dir_path, size_bytes, mtime_ms, birthtime_ms, missing, status FROM photos WHERE id = ?'
+    'SELECT id, library_id, rel_path, dir_path, size_bytes, mtime_ms, birthtime_ms, missing, playlist_id FROM photos WHERE id = ?'
   )
   const hasEvents = db.prepare('SELECT 1 FROM mark_events WHERE photo_id = ? LIMIT 1')
   const del = db.prepare('DELETE FROM photos WHERE id = ?')
@@ -203,7 +203,7 @@ export function applyMoves(db: DB, libraryId: number, pairs: MovePair[]): MovePa
     mtime_ms: number
     birthtime_ms: number | null
     missing: number
-    status: string
+    playlist_id: number | null
   }
 
   const usedMissing = new Set<number>()
@@ -218,7 +218,7 @@ export function applyMoves(db: DB, libraryId: number, pairs: MovePair[]): MovePa
       if (!from || !to) continue
       if (from.library_id !== libraryId || to.library_id !== libraryId) continue
       if (!from.missing || to.missing) continue
-      if (to.status !== 'unreviewed' || hasEvents.get(to.id)) continue
+      if (to.playlist_id !== null || hasEvents.get(to.id)) continue
 
       del.run(to.id)
       move.run(to.rel_path, to.dir_path, to.size_bytes, to.mtime_ms, to.birthtime_ms, from.id)

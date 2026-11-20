@@ -1,11 +1,12 @@
 import type { ComponentType } from 'react'
-import type { Filter, PhotoMeta, ScanProgress, ViewSpec } from '@shared/types'
+import type { Filter, PhotoMeta, Playlist, ScanProgress, ViewSpec } from '@shared/types'
 
 /** What the Viewer shares with optional features' UI. */
 export interface FeatureContext {
   libraryId: number
   view: ViewSpec
   meta: PhotoMeta | null
+  playlists: Playlist[]
   progress: ScanProgress | null
   setFilter: (f: Filter) => void
   /** Rebuild the photo list and counts (e.g. after a bulk action), staying on the current photo. */
@@ -24,6 +25,6 @@ export interface RendererFeature {
   Layer?: ComponentType<{ ctx: FeatureContext }>
   /** Small extra info next to the date in the info bar. */
   InfoBadge?: ComponentType<{ ctx: FeatureContext }>
-  /** Listed in the keyboard shortcut overlay. */
-  shortcuts?: { keys: string[]; label: string }[]
+  /** Single-key shortcuts the feature handles itself (listed in the overlay; playlists may take them over). */
+  shortcuts?: { key: string; label: string }[]
 }

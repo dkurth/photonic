@@ -114,6 +114,10 @@ button {
   --btn-bg: var(--meh);
   --btn-ink: var(--on-meh);
 }
+.btn.other {
+  --btn-bg: var(--highlight);
+  --btn-ink: var(--on-highlight);
+}
 .btn.small {
   --lift: 3px;
   padding: 5px 10px;

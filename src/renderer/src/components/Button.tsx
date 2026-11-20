@@ -5,7 +5,8 @@ export interface ButtonProps {
   children?: ReactNode
   /** Keyboard shortcut(s) to show as key caps. */
   keys?: string[]
-  variant?: 'plain' | 'accent' | 'like' | 'meh'
+  /** 'other' = a playlist that isn't Like or Meh. */
+  variant?: 'plain' | 'accent' | 'like' | 'meh' | 'other'
   size?: 'small' | 'normal' | 'big'
   /** Shows the sunk-in state; set briefly when the matching key is pressed. */
   pressed?: boolean

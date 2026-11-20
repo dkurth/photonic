@@ -1,18 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Filter, Library, PhotoMeta, ScanPhase, ScanProgress, Status, StatusCounts, ViewSpec } from '@shared/types'
-import { useKeyboard } from '../hooks/useKeyboard'
+import type {
+  Filter,
+  Library,
+  PhotoMeta,
+  Playlist,
+  PlaylistId,
+  ScanPhase,
+  ScanProgress,
+  StatusCounts,
+  ViewSpec
+} from '@shared/types'
+import { useKeyboard, type KeyHandler } from '../hooks/useKeyboard'
 import { usePressed } from '../hooks/usePressed'
 import { DoneScreen } from './DoneScreen'
 import { FolderMarkDialog } from './FolderMarkDialog'
+import { ManagePlaylists } from './ManagePlaylists'
 import { ShortcutsOverlay } from './ShortcutsOverlay'
 import { fmtNumber } from './format'
 import { InfoBar } from './InfoBar'
 import { firstUnreviewed, jumpsToUnreviewed, nextAfterMark } from './navigation'
 import { PhotoCache } from './photoCache'
+import { systemShortcuts } from './shortcuts'
 import { Stage, type Flash } from './Stage'
 import { Toolbar } from './Toolbar'
 import { TopBar } from './TopBar'
-import { FILTERS, nextSort, SORT_LABELS, ViewControls } from './ViewControls'
+import { filterPlaylistId, FILTERS, nextSort, SORT_LABELS, ViewControls } from './ViewControls'
 import type { FeatureContext, RendererFeature } from '../features/types'
 
 export const defaultView = (libraryId: number): ViewSpec => ({
@@ -44,7 +56,9 @@ export function Viewer({
   const cache = useMemo(() => new PhotoCache(), [])
   const [view, setView] = useState<ViewSpec | null>(null)
   const [ids, setIds] = useState<number[]>([])
-  const [statuses, setStatuses] = useState<Status[]>([])
+  /** Each listed photo's playlist (null = unreviewed), same order as `ids`. */
+  const [marks, setMarks] = useState<PlaylistId[]>([])
+  const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [index, setIndex] = useState(0)
   const [meta, setMeta] = useState<PhotoMeta | null>(null)
   /** The photos most likely to come next, kept decoded in the stage so they show instantly. */
@@ -53,7 +67,8 @@ export function Viewer({
   const [done, setDone] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
+  const [openMenu, setOpenMenu] = useState<'filter' | 'playlists' | null>(null)
+  const [managing, setManaging] = useState(false)
   const [featureModal, setFeatureModal] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [folderDialog, setFolderDialog] = useState(false)
@@ -61,11 +76,13 @@ export function Viewer({
   const [zoomed, setZoomed] = useState(false)
 
   const filters = useMemo(() => [...FILTERS, ...features.flatMap((f) => f.filters ?? [])], [features])
+  const system = useMemo(() => systemShortcuts(filters, features), [filters, features])
   const [pressed, press] = usePressed()
 
   const currentId = ids[index] as number | undefined
   const currentIdRef = useRef(currentId)
   currentIdRef.current = currentId
+  const playlistById = useMemo(() => new Map(playlists.map((p) => [p.id, p])), [playlists])
 
   const refreshCounts = useCallback(
     (v: ViewSpec | null) => {
@@ -84,7 +101,7 @@ export function Viewer({
       const keepId = currentIdRef.current
       cache.clear()
       setIds(list.ids)
-      setStatuses(list.statuses)
+      setMarks(list.playlists)
       const i = keepId === undefined ? -1 : list.ids.indexOf(keepId)
       setIndex(i >= 0 ? i : Math.max(0, Math.min(fallbackIndex, list.ids.length - 1)))
       refreshCounts(v)
@@ -110,7 +127,7 @@ export function Viewer({
       cache.clear()
       setView(v)
       setIds(list.ids)
-      setStatuses(list.statuses)
+      setMarks(list.playlists)
       setIndex(Math.max(0, last === undefined ? -1 : list.ids.indexOf(last)))
       refreshCounts(v)
     })()
@@ -118,6 +135,30 @@ export function Viewer({
       live = false
     }
   }, [api, cache, library.id, refreshCounts])
+
+  // Playlists (shared by all libraries). They change from Manage Playlists, possibly moving photos.
+  const viewRef = useRef(view)
+  viewRef.current = view
+  useEffect(() => {
+    const refresh = async (): Promise<void> => {
+      const list = await api.playlists.list()
+      setPlaylists(list)
+      const v = viewRef.current
+      if (!v) return
+      const viewing = filterPlaylistId(v.filter)
+      if (viewing !== null && !list.some((p) => p.id === viewing)) {
+        // The playlist being viewed was deleted.
+        const next = { ...v, filter: 'unreviewed' }
+        setView(next)
+        void api.settings.set(viewKey(library.id), next)
+        await loadList(next, 0)
+      } else {
+        await loadList(v, 0)
+      }
+    }
+    void api.playlists.list().then(setPlaylists)
+    return api.playlists.onChanged(() => void refresh())
+  }, [api, library.id, loadList])
 
   // Rescans: rebuild the list when a scan phase ends (and while the list is still empty).
   const lastPhase = useRef<ScanPhase | null>(null)
@@ -140,10 +181,9 @@ export function Viewer({
     void cache.get(currentId).then((m) => {
       if (!live) return
       setMeta(m)
-      // Preload where ↑/↓ would go next, plus the plain neighbors.
-      // Where ↑/↓ would go next, the one after that, and ←/→. (Looking further ahead was measured
-      // to be no faster: the extra decodes compete with the one that's needed next.)
-      const jump = view ? nextAfterMark(statuses, index, view.filter) : null
+      // Where marking would go next, the one after that, and ←/→. (Looking further ahead was
+      // measured to be no faster: the extra decodes compete with the one that's needed next.)
+      const jump = view ? nextAfterMark(marks, index, view.filter) : null
       const near = [
         ...new Set([jump === null ? undefined : ids[jump], ids[index + 1], ids[index + 2], ids[index - 1]])
       ].filter((x): x is number => x !== undefined)
@@ -154,7 +194,7 @@ export function Viewer({
     return () => {
       live = false
     }
-    // statuses only matter for picking what to preload
+    // marks only matter for picking what to preload
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cache, currentId, ids, index, view])
 
@@ -189,42 +229,44 @@ export function Viewer({
     else go(index - 1)
   }, [done, go, index])
 
-  /** Marks the current photo. Updates the screen first, then saves (PLAN.md §9). */
+  /**
+   * Puts the current photo in a playlist (null = back to Unreviewed). Updates the screen first,
+   * then saves (PLAN.md §9); putting it in a playlist moves on like ↑/↓ always have.
+   */
   const mark = useCallback(
-    async (status: Status) => {
+    async (playlistId: PlaylistId) => {
       if (currentId === undefined || !view || done) return
       const i = index
-      const before = statuses[i]
-      const updated = [...statuses]
-      updated[i] = status
-      setStatuses(updated)
+      const before = marks[i]
+      const updated = [...marks]
+      updated[i] = playlistId
+      setMarks(updated)
       // Update the cached copy too: rendering reads it (cache.peek) to switch photos instantly.
       const cur = cache.peek(currentId) ?? (meta?.id === currentId ? meta : null)
       if (cur) {
-        const updated = { ...cur, status }
-        cache.set(updated)
-        setMeta(updated)
+        const m = { ...cur, playlistId }
+        cache.set(m)
+        setMeta(m)
       }
       setFlash((f) => {
         const n = (f?.n ?? 0) + 1
-        // Remove it once the animation is over, rather than trusting it to end invisible.
-        window.setTimeout(() => setFlash((cur) => (cur?.n === n ? null : cur)), 900)
-        return { status, n }
+        window.setTimeout(() => setFlash((c) => (c?.n === n ? null : c)), 900)
+        return { playlistId, n }
       })
 
-      if (status !== 'unreviewed') {
+      if (playlistId !== null) {
         const j = nextAfterMark(updated, i, view.filter)
         if (j === null) setDone(true)
         else setIndex(j)
       }
 
       try {
-        const saved = await api.marks.set(currentId, status)
+        const saved = await api.marks.set(currentId, playlistId)
         if (saved) cache.set(saved)
         refreshCounts(view)
       } catch (e) {
         // Put it back the way it was.
-        setStatuses((s) => {
+        setMarks((s) => {
           const r = [...s]
           r[i] = before
           return r
@@ -233,7 +275,7 @@ export function Viewer({
         flashToast(`Couldn't save: ${String(e)}`)
       }
     },
-    [api, cache, currentId, done, flashToast, index, meta, refreshCounts, statuses, view]
+    [api, cache, currentId, done, flashToast, index, marks, meta, refreshCounts, view]
   )
 
   // ⌘Z: the page handles the key (and prevents the default, so the Edit → Undo menu accelerator
@@ -253,11 +295,11 @@ export function Viewer({
       return
     }
     const pos = new Map(ids.map((id, i) => [id, i]))
-    setStatuses((s) => {
+    setMarks((s) => {
       const u = [...s]
       for (const c of r.changes) {
         const i = pos.get(c.photoId)
-        if (i !== undefined && c.field === 'status') u[i] = c.status
+        if (i !== undefined && c.field === 'playlist') u[i] = c.playlistId
       }
       return u
     })
@@ -330,25 +372,27 @@ export function Viewer({
     void api.photos.revealInFinder(currentId)
   }, [api, currentId, press])
 
-  const unreviewedEarlier =
-    done && view && jumpsToUnreviewed(view.filter) ? statuses.filter((s) => s === 'unreviewed').length : 0
+  const unreviewedEarlier = done && view && jumpsToUnreviewed(view.filter) ? marks.filter((m) => m === null).length : 0
 
+  // --- Keys ----------------------------------------------------------------------------------
+
+  const keysEnabled = !featureModal && !shortcutsOpen && !openMenu && !folderDialog && !managing
+
+  // The app's own keys (see shortcuts.ts for the list shown to the user).
   useKeyboard(
     {
       ArrowRight: () => (press('next'), next()),
       ArrowLeft: () => (press('prev'), prev()),
       // Marking keys ignore key repeat, so a held key can't mark a whole folder (PLAN.md §2).
-      ArrowUp: (e) => !e.repeat && (press('like'), void mark('like')),
-      ArrowDown: (e) => !e.repeat && (press('meh'), void mark('meh')),
-      Backspace: (e) => !e.repeat && void mark('unreviewed'),
+      Backspace: (e) => !e.repeat && void mark(null),
+      u: (e) => !e.repeat && void mark(null),
       'Mod+z': () => void undo(),
-      u: (e) => !e.repeat && void mark('unreviewed'),
       Home: () => (press('first'), go(0)),
       End: () => (press('last'), go(ids.length - 1)),
       Escape: () => (setDone(false), setZoomed(false)),
       Enter: () => {
         if (!done) return
-        const f = firstUnreviewed(statuses)
+        const f = firstUnreviewed(marks)
         if (f >= 0) go(f)
       },
       c: copyPath,
@@ -359,11 +403,24 @@ export function Viewer({
       f: () => setFolderDialog(true),
       ' ': () => setZoomed((z) => !z),
       '?': () => setShortcutsOpen(true),
-      // 1–4 for the core filters, then any filters added by features (e.g. 5 = Duplicates)
+      // 1 All, 2 Unreviewed, then filters added by features (3 = Duplicates)
       ...Object.fromEntries(filters.map((f) => [f.key, () => setFilter(f.id)]))
     },
-    !featureModal && !shortcutsOpen && !filterMenuOpen && !folderDialog
+    keysEnabled
   )
+
+  // Playlist keys run first (capture phase), so a playlist can take over one of the app's keys.
+  const playlistKeys = useMemo(
+    () =>
+      Object.fromEntries(
+        playlists
+          .filter((p) => p.shortcut)
+          .map((p): [string, KeyHandler] => [p.shortcut!, (e) => !e.repeat && (press(`pl-${p.id}`), void mark(p.id))])
+      ),
+    [mark, playlists, press]
+  )
+  useKeyboard(playlistKeys, keysEnabled, { capture: true })
+
   useKeyboard({ Escape: () => setShortcutsOpen(false), '?': () => setShortcutsOpen(false) }, shortcutsOpen)
 
   // Menu commands. Undo goes to a focused text field if there is one, otherwise it undoes a mark.
@@ -389,12 +446,14 @@ export function Viewer({
   // If the next photo's details are already here (they usually are), show it in this very render
   // instead of waiting for the effect above.
   const shown = (currentId !== undefined ? cache.peek(currentId) : undefined) ?? (meta?.id === currentId ? meta : null)
+  const shownPlaylist = shown?.playlistId != null ? (playlistById.get(shown.playlistId) ?? null) : null
 
   const featureCtx: FeatureContext | null = view
     ? {
         libraryId: library.id,
         view,
         meta: shown,
+        playlists,
         progress,
         setFilter,
         reload,
@@ -426,11 +485,13 @@ export function Viewer({
             <ViewControls
               view={view}
               filters={filters}
+              playlists={playlists}
               counts={counts}
-              filterMenuOpen={filterMenuOpen}
-              onFilterMenu={setFilterMenuOpen}
+              openMenu={openMenu}
+              onOpenMenu={setOpenMenu}
               pressed={pressed}
               onFilter={setFilter}
+              onManagePlaylists={() => setManaging(true)}
               onSort={cycleSort}
             />
           )
@@ -441,10 +502,13 @@ export function Viewer({
         standby={standby}
         empty={empty}
         zoomed={zoomed}
-        overlay={done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} /> : null}
+        overlay={
+          done ? <DoneScreen counts={counts} playlists={playlists} unreviewedEarlier={unreviewedEarlier} /> : null
+        }
       />
       <InfoBar
         meta={shown}
+        playlist={shownPlaylist}
         pressed={pressed}
         onCopy={copyPath}
         onReveal={reveal}
@@ -456,34 +520,39 @@ export function Viewer({
         pressed={pressed}
         counts={counts}
         canMark={currentId !== undefined && !done}
+        arrowPlaylists={{
+          down: playlists.find((p) => p.shortcut === 'ArrowDown'),
+          up: playlists.find((p) => p.shortcut === 'ArrowUp')
+        }}
+        flash={flash}
         onFirst={() => (press('first'), go(0))}
         onPrev={() => (press('prev'), prev())}
         onNext={() => (press('next'), next())}
         onLast={() => (press('last'), go(ids.length - 1))}
-        flash={flash}
-        onLike={() => void mark('like')}
-        onMeh={() => void mark('meh')}
+        onMark={(id) => void mark(id)}
       />
       {featureCtx && features.map((f) => f.Layer && <f.Layer key={f.name} ctx={featureCtx} />)}
       {folderDialog && (
         <FolderMarkDialog
           libraryId={library.id}
-          initialPath={meta ? meta.absPath.slice(0, meta.absPath.lastIndexOf('/')) : library.rootPath}
+          playlists={playlists}
+          initialPath={shown ? shown.absPath.slice(0, shown.absPath.lastIndexOf('/')) : library.rootPath}
           onClose={() => setFolderDialog(false)}
-          onDone={({ changed, status }) => {
+          onDone={({ changed, playlist }) => {
             setFolderDialog(false)
             setDone(false)
             void reload()
             flashToast(
               changed
-                ? `Marked ${fmtNumber(changed)} ${changed === 1 ? 'photo' : 'photos'} ${status === 'like' ? 'Like' : 'Meh'} — ⌘Z to undo`
+                ? `Put ${fmtNumber(changed)} ${changed === 1 ? 'photo' : 'photos'} in ${playlist.name} — ⌘Z to undo`
                 : 'Nothing to change'
             )
           }}
         />
       )}
+      {managing && <ManagePlaylists playlists={playlists} system={system} onClose={() => setManaging(false)} />}
       {shortcutsOpen && (
-        <ShortcutsOverlay extra={features.flatMap((f) => f.shortcuts ?? [])} onClose={() => setShortcutsOpen(false)} />
+        <ShortcutsOverlay system={system} playlists={playlists} onClose={() => setShortcutsOpen(false)} />
       )}
       {toast && (
         <div className="toast" role="status">

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { PhotoMeta } from '@shared/types'
+import type { PhotoMeta, Playlist } from '@shared/types'
 import { Button } from '../components/Button'
 import { StatusTag } from '../components/StatusTag'
 import { dateLabel } from './format'
@@ -7,12 +7,15 @@ import { dateLabel } from './format'
 /** Full path and date of the current photo. Always visible (PLAN.md §7). */
 export function InfoBar({
   meta,
+  playlist,
   badges,
   pressed,
   onCopy,
   onReveal
 }: {
   meta: PhotoMeta | null
+  /** The playlist the photo is in (null = Unreviewed). */
+  playlist: Playlist | null
   badges?: ReactNode
   pressed: Set<string>
   onCopy: () => void
@@ -21,7 +24,7 @@ export function InfoBar({
   const date = meta ? dateLabel(meta) : null
   return (
     <section className="infobar" data-testid="infobar">
-      <div className="tag-slot">{meta && <StatusTag status={meta.status} />}</div>
+      <div className="tag-slot">{meta && <StatusTag playlist={playlist} />}</div>
       <div className="path" data-testid="path">
         {meta?.absPath ?? ' '}
       </div>

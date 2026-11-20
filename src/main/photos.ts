@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs'
 import { join, sep } from 'node:path'
-import type { DateSource, PhotoMeta, Status } from '@shared/types'
+import type { DateSource, PhotoMeta } from '@shared/types'
 import type { DB } from './db'
 
 export interface PhotoRow {
@@ -17,7 +17,7 @@ export interface PhotoRow {
   camera_make: string | null
   camera_model: string | null
   lens_model: string | null
-  status: Status
+  playlist_id: number | null
   missing: number
   hidden: number
   hidden_reason: string | null
@@ -64,7 +64,7 @@ export function toPhotoMeta(r: PhotoRow): PhotoMeta {
     dirPath: r.dir_path,
     absPath: join(r.root_path, r.rel_path),
     url: photoUrl(r.id, r.mtime_ms),
-    status: r.status,
+    playlistId: r.playlist_id,
     displayDate: d.date,
     dateSource: d.source,
     sizeBytes: r.size_bytes,

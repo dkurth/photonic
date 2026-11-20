@@ -7,7 +7,7 @@ import { coreMigrations } from '../src/main/db/migrations'
 import { addLibrary } from '../src/main/library'
 import { comparePaths, listIds, seededShuffle } from '../src/main/ordering'
 import { scanLibrary } from '../src/main/scanner/scan'
-import { makeTree, tempDir } from './helpers'
+import { LIKE, MEH, makeTree, tempDir } from './helpers'
 
 async function setup(files: string[]) {
   const root = tempDir()
@@ -27,8 +27,8 @@ async function setup(files: string[]) {
   return { db, root, lib, paths, view }
 }
 
-const setStatus = (db: DB, path: string, status: string): void =>
-  void db.prepare('UPDATE photos SET status = ? WHERE rel_path = ?').run(status, path)
+const setPlaylist = (db: DB, path: string, playlistId: number | null): void =>
+  void db.prepare('UPDATE photos SET playlist_id = ? WHERE rel_path = ?').run(playlistId, path)
 
 describe('comparePaths', () => {
   it('sorts numbers naturally and case-insensitively', () => {
@@ -45,14 +45,14 @@ describe('comparePaths', () => {
 })
 
 describe('listIds', () => {
-  it('filters by status', async () => {
+  it('filters: All, Unreviewed, and one playlist', async () => {
     const { db, paths, view } = await setup(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'])
-    setStatus(db, 'a.jpg', 'like')
-    setStatus(db, 'b.jpg', 'meh')
+    setPlaylist(db, 'a.jpg', LIKE)
+    setPlaylist(db, 'b.jpg', MEH)
     expect(paths(listIds(db, view({ filter: 'all' })))).toEqual(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg'])
     expect(paths(listIds(db, view({ filter: 'unreviewed' })))).toEqual(['c.jpg', 'd.jpg'])
-    expect(paths(listIds(db, view({ filter: 'like' })))).toEqual(['a.jpg'])
-    expect(paths(listIds(db, view({ filter: 'meh' })))).toEqual(['b.jpg'])
+    expect(paths(listIds(db, view({ filter: `playlist:${LIKE}` })))).toEqual(['a.jpg'])
+    expect(paths(listIds(db, view({ filter: `playlist:${MEH}` })))).toEqual(['b.jpg'])
   })
 
   it('never includes missing photos', async () => {

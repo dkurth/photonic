@@ -1,10 +1,10 @@
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { FolderTarget, Status } from '@shared/types'
+import type { FolderTarget } from '@shared/types'
 import type { DB } from './db'
 import { getLibraryRow } from './library'
-import { newBatchId, setStatus, visibleSql } from './marks'
+import { newBatchId, setPlaylist, visibleSql } from './marks'
 import type { Visibility } from './ordering'
 
 /** SQL for "photo is in this folder or below it" ('' = the whole library). */
@@ -45,31 +45,34 @@ export function resolveFolder(
   }
   const dirPath = rel.split(sep).join('/')
   const f = folderWhere(dirPath)
-  const counts = db
+  const rows = db
     .prepare(
-      `SELECT count(*) AS total,
-         count(*) FILTER (WHERE p.status = 'unreviewed') AS unreviewed,
-         count(*) FILTER (WHERE p.status = 'like') AS "like",
-         count(*) FILTER (WHERE p.status = 'meh') AS meh
-       FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${f.where}
-         AND ${visibleSql('p', vis.hideReasons ?? [])}`
+      `SELECT p.playlist_id AS pl, count(*) AS n FROM photos p
+       WHERE p.library_id = ? AND p.missing = 0 AND ${f.where} AND ${visibleSql('p', vis.hideReasons ?? [])}
+       GROUP BY p.playlist_id`
     )
-    .get(libraryId, ...f.params) as { total: number; unreviewed: number; like: number; meh: number }
-  return { dirPath, absPath: abs, ...counts }
+    .all(libraryId, ...f.params) as { pl: number | null; n: number }[]
+  const target: FolderTarget = { dirPath, absPath: abs, total: 0, unreviewed: 0, byPlaylist: {} }
+  for (const r of rows) {
+    target.total += r.n
+    if (r.pl === null) target.unreviewed = r.n
+    else target.byPlaylist[r.pl] = r.n
+  }
+  return target
 }
 
 export type FolderMarkMode = 'all' | 'unreviewed'
 
 /**
- * Likes or Mehs every photo in a folder (and its subfolders) as one batch, so a single ⌘Z
- * undoes it. 'unreviewed' leaves photos that already have a mark alone. Hidden photos (e.g.
+ * Puts every photo in a folder (and its subfolders) in a playlist as one batch, so a single ⌘Z
+ * undoes it. 'unreviewed' leaves photos that are already in a playlist alone. Hidden photos (e.g.
  * duplicate copies) are skipped, like everywhere else.
  */
 export function markFolder(
   db: DB,
   libraryId: number,
   dirPath: string,
-  status: Exclude<Status, 'unreviewed'>,
+  playlistId: number,
   mode: FolderMarkMode,
   vis: Visibility = {}
 ): { changed: number; batchId: number | null } {
@@ -79,14 +82,14 @@ export function markFolder(
       .prepare(
         `SELECT p.id FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${f.where}
            AND ${visibleSql('p', vis.hideReasons ?? [])}
-           AND ${mode === 'unreviewed' ? "p.status = 'unreviewed'" : 'p.status <> ?'}
+           AND ${mode === 'unreviewed' ? 'p.playlist_id IS NULL' : 'p.playlist_id IS NOT ?'}
          ORDER BY p.id`
       )
       .pluck()
-      .all(libraryId, ...f.params, ...(mode === 'all' ? [status] : [])) as number[]
+      .all(libraryId, ...f.params, ...(mode === 'all' ? [playlistId] : [])) as number[]
     if (!ids.length) return { changed: 0, batchId: null }
     const batchId = newBatchId(db)
-    for (const id of ids) setStatus(db, id, status, { source: 'folder', batchId })
+    for (const id of ids) setPlaylist(db, id, playlistId, { source: 'folder', batchId })
     return { changed: ids.length, batchId }
   })()
 }

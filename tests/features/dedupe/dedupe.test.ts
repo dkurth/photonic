@@ -47,9 +47,16 @@ async function setup(files: Record<string, string>, hasher: Hasher = hashFile) {
   await scan()
   const idOf = (p: string): number => db.prepare('SELECT id FROM photos WHERE rel_path = ?').pluck().get(p) as number
   const statusOf = (p: string): string =>
-    db.prepare('SELECT status FROM photos WHERE rel_path = ?').pluck().get(p) as string
+    db
+      .prepare(
+        "SELECT COALESCE((SELECT builtin FROM playlists WHERE id = photos.playlist_id), 'unreviewed') FROM photos WHERE rel_path = ?"
+      )
+      .pluck()
+      .get(p) as string
   const setStatus = (p: string, s: string): void =>
-    void db.prepare('UPDATE photos SET status = ? WHERE rel_path = ?').run(s, p)
+    void db
+      .prepare('UPDATE photos SET playlist_id = (SELECT id FROM playlists WHERE builtin = ?) WHERE rel_path = ?')
+      .run(s, p)
   return { db, root, lib, registry, scan, idOf, statusOf, setStatus }
 }
 
@@ -227,7 +234,7 @@ describe('duplicates', () => {
     const r = hideDuplicates(db, lib.id)
     expect(r.hidden).toBe(3)
     expect(['backup/IMG_1.jpg', 'backup/old/IMG_1 copy.jpg', 'x/IMG_2.jpg'].every((p) => hiddenOf(db, p))).toBe(true)
-    // statuses untouched: nothing became Meh
+    // playlists untouched: nothing went into Meh
     for (const p of Object.keys(files)) expect(statusOf(p)).toBe('unreviewed')
     // each photo now comes up once when reviewing
     expect(visible(db, lib.id, registry)).toEqual(['IMG_1.jpg', 'IMG_2.jpg', 'unique.jpg'])
@@ -238,7 +245,7 @@ describe('duplicates', () => {
     const { db, lib, registry } = await setup(files)
     hideDuplicates(db, lib.id)
     const vis = { hideReasons: registry.hideReasons() }
-    expect(statusCounts(db, lib.id, vis)).toEqual({ total: 3, unreviewed: 3, like: 0, meh: 0 })
+    expect(statusCounts(db, lib.id, vis)).toEqual({ total: 3, unreviewed: 3, byPlaylist: {} })
     expect(libraryStats(db, lib.id, vis)).toMatchObject({ total: 3, hidden: 3 })
   })
 
@@ -258,9 +265,9 @@ describe('duplicates', () => {
 
   it('a single Cmd+Z brings every hidden copy back, restoring the exact previous state', async () => {
     const { db, lib } = await setup(files)
-    db.prepare("UPDATE photos SET status = 'like' WHERE rel_path = 'unique.jpg'").run()
+    db.prepare("UPDATE photos SET playlist_id = 1 WHERE rel_path = 'unique.jpg'").run()
     const snapshot = (): unknown[] =>
-      db.prepare('SELECT id, status, hidden, hidden_reason FROM photos ORDER BY id').all()
+      db.prepare('SELECT id, playlist_id, hidden, hidden_reason FROM photos ORDER BY id').all()
     const before = snapshot()
     hideDuplicates(db, lib.id)
     const r = undoLast(db, lib.id)!

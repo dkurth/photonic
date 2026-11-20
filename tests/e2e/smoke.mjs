@@ -89,8 +89,30 @@ const imageLoaded = (win) =>
 const waitPath = (win, suffix) =>
   win.waitForFunction((sfx) => document.querySelector('[data-testid=path]')?.textContent.endsWith(sfx), suffix)
 const tagStatus = (win) => win.getByTestId('status-tag').getAttribute('data-status')
+// Built-in playlist ids in a fresh database: Like = 1 (on ↑), Meh = 2 (on ↓).
+const LIKE = 1
+const MEH = 2
+/** Library stats plus like/meh counts (from the per-playlist counts). */
 const stats = (win) =>
-  win.evaluate(async () => window.photonic.libraries.stats((await window.photonic.libraries.last()).id))
+  win.evaluate(async () => {
+    const id = (await window.photonic.libraries.last()).id
+    const [s, c] = await Promise.all([window.photonic.libraries.stats(id), window.photonic.photos.counts(id)])
+    return { ...s, like: c.byPlaylist[1] ?? 0, meh: c.byPlaylist[2] ?? 0 }
+  })
+/** Counts as { total, unreviewed, like, meh }. */
+const counts = (win) =>
+  win.evaluate(async () => {
+    const c = await window.photonic.photos.counts((await window.photonic.libraries.last()).id)
+    return { total: c.total, unreviewed: c.unreviewed, like: c.byPlaylist[1] ?? 0, meh: c.byPlaylist[2] ?? 0 }
+  })
+const filterValue = (win) => win.getByTestId('filter').getAttribute('data-value')
+const playlistValue = (win) => win.getByTestId('playlists').getAttribute('data-value')
+/** Choose a playlist to view from the Playlists dropdown. */
+const viewPlaylist = async (win, id) => {
+  await win.getByTestId('playlists').click()
+  await win.getByTestId(`playlist-option-${id}`).click()
+  await win.waitForFunction((v) => document.querySelector('[data-testid=playlists]')?.dataset.value === String(v), id)
+}
 
 try {
   // ------------------------------------------------------------------ run 0
@@ -307,18 +329,20 @@ try {
 
     // ---- M4: filters and sort orders ----
     const position = () => text(win, 'position')
-    const current = () => win.getByTestId('filter').getAttribute('data-filter')
+    const current = () => filterValue(win)
 
-    await step('filters 1–4 switch between All / Unreviewed / Like / Meh', async () => {
-      await win.keyboard.press('3')
+    await step('filters 1–2 switch between All / Unreviewed; Like and Meh live in the Playlists dropdown', async () => {
+      await viewPlaylist(win, LIKE)
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '1 / 1')
       await waitPath(win, 'beach.png')
-      assert.equal(await current(), 'like')
-      await win.keyboard.press('4')
+      assert.equal(await current(), `playlist:${LIKE}`)
+      assert.match(await text(win, 'filter'), /^Filter\s*▾$/) // no core filter active while viewing a playlist
+      await viewPlaylist(win, MEH)
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 3'))
       await win.keyboard.press('1')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
       assert.equal(await current(), 'all')
+      assert.equal(await playlistValue(win), '')
     })
 
     await step('the filter dropdown shows the current filter and switches by click, arrows or number', async () => {
@@ -326,26 +350,27 @@ try {
       await win.getByTestId('filter').click()
       const list = win.getByRole('listbox', { name: 'Filter' })
       await list.waitFor()
-      // every filter is listed with its key, and the core ones with counts
-      assert.equal(await list.getByRole('option').count(), 5)
-      assert.match(await win.getByTestId('filter-option-like').innerText(), /3\s+Like\s+1/)
+      // All, Unreviewed, and Duplicates (the dedupe feature) — each with its key
+      assert.equal(await list.getByRole('option').count(), 3)
+      assert.match(await win.getByTestId('filter-option-unreviewed').innerText(), /2\s+Unreviewed\s+1/)
       await shot(win, 'filter-dropdown')
       await win.keyboard.press('ArrowDown') // All → Unreviewed
       await win.keyboard.press('Enter')
       await list.waitFor({ state: 'detached' })
       assert.equal(await current(), 'unreviewed')
       await win.getByTestId('filter').click()
-      await win.getByTestId('filter-option-meh').click()
-      await win.waitForFunction(() => document.querySelector('[data-testid=filter]')?.dataset.filter === 'meh')
+      await win.getByTestId('filter-option-all').click()
+      await win.waitForFunction(() => document.querySelector('[data-testid=filter]')?.dataset.value === 'all')
       await win.getByTestId('filter').click()
       await list.waitFor()
       await win.keyboard.press('Escape') // closes without changing anything
       await list.waitFor({ state: 'detached' })
-      assert.equal(await current(), 'meh')
-      await win.getByTestId('filter').click()
-      await win.keyboard.press('1') // number keys work inside the menu too
-      await list.waitFor({ state: 'detached' })
       assert.equal(await current(), 'all')
+      await win.getByTestId('filter').click()
+      await win.keyboard.press('2') // number keys work inside the menu too
+      await list.waitFor({ state: 'detached' })
+      assert.equal(await current(), 'unreviewed')
+      await win.keyboard.press('1')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
       await win.keyboard.press('Home')
       await win.keyboard.press('ArrowRight') // and the viewer's keys are back
@@ -402,11 +427,10 @@ try {
         return window.photonic.photos.counts(lib.id)
       })
       // beach liked; top, IMG_0001 meh (IMG_0002 meh is now missing, so not counted); broken + new.jpg unreviewed
-      assert.deepEqual([marked.like, marked.meh, marked.unreviewed], [1, 2, 2])
+      assert.deepEqual([marked.byPlaylist[LIKE], marked.byPlaylist[MEH], marked.unreviewed], [1, 2, 2])
     })
     await step('switch to Like, sorted by date…', async () => {
-      await win.keyboard.press('3')
-      await win.waitForFunction(() => document.querySelector('[data-testid=filter]')?.dataset.filter === 'like')
+      await viewPlaylist(win, LIKE)
       await win.keyboard.press('s')
       await win.waitForFunction(() => document.querySelector('[data-testid=sort]')?.textContent.startsWith('Date'))
     })
@@ -417,8 +441,8 @@ try {
   {
     const { app, win } = await launch()
     await step('…and the view (filter, sort) is restored on the next launch', async () => {
-      await win.waitForFunction(() => document.querySelector('[data-testid=filter]')?.dataset.filter === 'like')
-      assert.equal(await win.getByTestId('filter').getAttribute('data-filter'), 'like')
+      await win.waitForFunction(() => document.querySelector('[data-testid=playlists]')?.dataset.value === '1')
+      assert.equal(await filterValue(win), `playlist:${LIKE}`)
       assert.match(await text(win, 'sort'), /^Date/)
       await waitPath(win, 'beach.png')
     })
@@ -467,7 +491,7 @@ try {
         false
       )
       await win.keyboard.press('f')
-      const dlg = win.getByRole('dialog', { name: 'Like or Meh a folder' })
+      const dlg = win.getByRole('dialog', { name: 'Put a folder in a playlist' })
       await dlg.waitFor()
       await win.keyboard.press('Escape')
       await dlg.waitFor({ state: 'detached' })
@@ -497,9 +521,7 @@ try {
       await win.getByTestId('done-screen').waitFor()
       await clickMenu('undo')
       await win.waitForSelector('text=Undone')
-      const c = await win.evaluate(async () =>
-        window.photonic.photos.counts((await window.photonic.libraries.last()).id)
-      )
+      const c = await counts(win)
       assert.equal(c.like, 1)
       assert.equal(c.meh, 2)
     })
@@ -518,6 +540,187 @@ try {
       await dlg.waitFor({ state: 'detached' })
       await shot(win, 'm6-viewer')
     })
+
+    // ---- Playlists ----
+    const manage = () => win.getByRole('dialog', { name: 'Manage playlists' })
+    const openManage = async () => {
+      await win.getByTestId('playlists').click()
+      await win.getByTestId('manage-playlists').click()
+      await manage().waitFor()
+    }
+    const playlistsNow = () => win.evaluate(() => window.photonic.playlists.list())
+    const keyOf = async (name) => (await playlistsNow()).find((p) => p.name === name)?.shortcut ?? null
+    const setKey = async (id, key) => {
+      await win.getByTestId(`playlist-key-${id}`).click()
+      await win.waitForFunction(
+        (i) => document.querySelector(`[data-testid=playlist-key-${i}]`)?.textContent === 'Press a key…',
+        id
+      )
+      await win.keyboard.press(key)
+    }
+    let MEMES, CATS
+
+    await step('Manage Playlists: create playlists; they start without a key', async () => {
+      await win.keyboard.press('1') // view All
+      await openManage()
+      for (const name of ['memes', 'cats']) {
+        await win.getByTestId('new-playlist-name').fill(name)
+        await win.keyboard.press('Enter')
+        await win.waitForFunction(
+          (n) => [...document.querySelectorAll('[data-testid^=playlist-name-]')].some((i) => i.value === n),
+          name
+        )
+      }
+      const all = await playlistsNow()
+      MEMES = all.find((p) => p.name === 'memes').id
+      CATS = all.find((p) => p.name === 'cats').id
+      assert.deepEqual(
+        all.map((p) => p.name),
+        ['cats', 'Like', 'Meh', 'memes']
+      ) // alphabetical
+      assert.equal(await keyOf('memes'), null)
+    })
+
+    await step('a free key is assigned straight away', async () => {
+      await setKey(CATS, 'k')
+      await win.waitForFunction(async () => (await window.photonic.playlists.list()).some((p) => p.shortcut === 'k'))
+      assert.equal(await keyOf('cats'), 'k')
+    })
+
+    await step('a key used by another playlist asks first, then moves it (↑ from Like to memes)', async () => {
+      await setKey(MEMES, 'ArrowUp')
+      const conflict = win.getByTestId('key-conflict')
+      await conflict.waitFor()
+      assert.match(await conflict.innerText(), /is used by Like\. Give it to memes instead\?/)
+      await shot(win, 'playlist-key-conflict')
+      await conflict.getByRole('button', { name: 'Move it' }).click()
+      await conflict.waitFor({ state: 'detached' })
+      await win.waitForFunction(
+        async () => (await window.photonic.playlists.list()).find((p) => p.name === 'memes')?.shortcut === 'ArrowUp'
+      )
+      assert.equal(await keyOf('Like'), null)
+    })
+
+    await step('a key the app uses warns, and can be taken anyway (S from "change order")', async () => {
+      await setKey(MEMES, 's')
+      const conflict = win.getByTestId('key-conflict')
+      await conflict.waitFor()
+      assert.match(
+        await conflict.innerText(),
+        /is used for “Order: filename → date → random”\. Use it for memes anyway\?/
+      )
+      await conflict.getByRole('button', { name: 'Use it' }).click()
+      await conflict.waitFor({ state: 'detached' }) // the question is answered before anything else
+      await win.waitForFunction(
+        async () => (await window.photonic.playlists.list()).find((p) => p.name === 'memes')?.shortcut === 's'
+      )
+      await shot(win, 'manage-playlists')
+      await win.keyboard.press('Escape')
+      await manage().waitFor({ state: 'detached' })
+    })
+
+    await step('a playlist key marks the photo and moves on; it takes priority over the app key it took', async () => {
+      // Unreviewed, by date: new.jpg (EXIF 2019) comes before broken.jpg (file date only)
+      await win.keyboard.press('2')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 2'))
+      await win.keyboard.press('Home')
+      await waitPath(win, 'new.jpg')
+      const sortBefore = await text(win, 'sort')
+      await win.keyboard.press('s') // now "put in memes", not "change order"
+      await waitPath(win, 'broken.jpg') // next unreviewed
+      assert.equal(await text(win, 'sort'), sortBefore)
+      const c = await win.evaluate(async () =>
+        window.photonic.photos.counts((await window.photonic.libraries.last()).id)
+      )
+      assert.equal(c.byPlaylist[MEMES], 1)
+      await win.keyboard.press('ArrowLeft')
+      await waitPath(win, 'new.jpg')
+      await win.waitForFunction(() => document.querySelector('[data-testid=status-tag]')?.textContent.includes('MEMES'))
+    })
+
+    await step('the ? overlay lists playlist keys and shows the app key that was taken over', async () => {
+      await win.keyboard.press('Shift+?')
+      const dlg = win.getByRole('dialog', { name: 'Keyboard shortcuts' })
+      await dlg.waitFor()
+      const t = await dlg.innerText()
+      assert.match(t, /memes/)
+      assert.match(t, /Order: filename → date → random — now memes/)
+      await win.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'detached' })
+    })
+
+    await step('Reset shortcuts: Like ↑ / Meh ↓ again, clashing keys removed, other keys kept', async () => {
+      await openManage()
+      await manage().getByRole('button', { name: 'Reset shortcuts' }).click()
+      await win.getByTestId('manage-message').waitFor()
+      const keys = Object.fromEntries((await playlistsNow()).map((p) => [p.name, p.shortcut]))
+      assert.deepEqual(keys, { cats: 'k', Like: 'ArrowUp', Meh: 'ArrowDown', memes: null })
+      await win.keyboard.press('Escape')
+      await manage().waitFor({ state: 'detached' })
+    })
+
+    await step('any playlist key: K puts the photo in cats; the toolbar follows ↑/↓', async () => {
+      await win.keyboard.press('2') // Unreviewed: only broken.jpg is left
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '1 / 1')
+      await waitPath(win, 'broken.jpg')
+      await win.keyboard.press('k')
+      await win.getByTestId('done-screen').waitFor() // nothing unreviewed left after it
+      const c = await win.evaluate(async () =>
+        window.photonic.photos.counts((await window.photonic.libraries.last()).id)
+      )
+      assert.equal(c.byPlaylist[CATS], 1)
+      // the scores update as soon as the save returns
+      await win.waitForFunction(() => document.querySelector('[data-testid=done-screen]')?.textContent.includes('cats'))
+      // the two toolbar buttons are the ↓ and ↑ playlists
+      assert.deepEqual(
+        await win
+          .locator('.toolbar .mark-btn')
+          .allInnerTexts()
+          .then((t) => t.map((x) => x.replace(/\s+/g, ' ').trim())),
+        ['¯\\_(ツ)_/¯ Meh ↓', '⸜(｡˃ ᵕ ˂ )⸝♡ Like ↑']
+      )
+    })
+
+    await step('the Playlists dropdown lists playlists alphabetically; viewing one lets you recategorize', async () => {
+      await win.getByTestId('playlists').click()
+      const list = win.getByRole('listbox', { name: 'Playlists' })
+      await list.waitFor()
+      const items = (await list.getByRole('option').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim())
+      assert.equal(items[0], 'Manage Playlists…')
+      // alphabetically: cats, Like, Meh, memes
+      const order = await list
+        .locator('[data-testid^=playlist-option-]')
+        .evaluateAll((els) => els.map((e) => Number(e.dataset.testid.replace('playlist-option-', ''))))
+      assert.deepEqual(order, [CATS, LIKE, MEH, MEMES])
+      await shot(win, 'playlists-dropdown')
+      await win.getByTestId(`playlist-option-${CATS}`).click()
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '1 / 1')
+      await waitPath(win, 'broken.jpg')
+      await win.keyboard.press('ArrowUp') // recategorize: cats → Like
+      await win.getByTestId('done-screen').waitFor()
+      const c = await counts(win)
+      assert.equal(c.like, 2)
+    })
+
+    await step('rename a playlist; delete one, choosing where its photos go', async () => {
+      await openManage()
+      const name = win.getByTestId(`playlist-name-${MEMES}`)
+      await name.fill('Funny')
+      await win.keyboard.press('Enter')
+      await win.waitForFunction(async () => (await window.photonic.playlists.list()).some((p) => p.name === 'Funny'))
+      await win.getByTestId(`playlist-row-${MEMES}`).getByRole('button', { name: 'Delete' }).click()
+      const confirm = win.getByTestId('delete-confirm')
+      await confirm.waitFor()
+      assert.match(await confirm.innerText(), /Funny has 1 photo\. Move them to/)
+      await win.getByTestId('delete-move-to').selectOption({ label: 'Meh' })
+      await confirm.getByRole('button', { name: 'Delete playlist' }).click()
+      await confirm.waitFor({ state: 'detached' })
+      await win.waitForFunction(async () => !(await window.photonic.playlists.list()).some((p) => p.name === 'Funny'))
+      assert.equal(await win.getByTestId(`playlist-row-${LIKE}`).getByRole('button', { name: 'Delete' }).count(), 0) // built in
+      await win.keyboard.press('Escape')
+      await manage().waitFor({ state: 'detached' })
+      assert.equal((await counts(win)).meh, 3) // new.jpg moved from Funny to Meh
+    })
     await app.close()
   }
 
@@ -530,8 +733,7 @@ try {
     await win.setViewportSize({ width: 1280, height: 800 })
     return { app, win }
   }
-  const dupStats = (win) =>
-    win.evaluate(async () => window.photonic.photos.counts((await window.photonic.libraries.last()).id))
+  const dupStats = counts
   {
     const { app, win } = await launchDupes()
     const [x, y, z] = await makeImages(app, [
@@ -576,7 +778,7 @@ try {
     })
 
     await step('dedupe: 5 shows only duplicated photos, copies grouped together', async () => {
-      await win.keyboard.press('5')
+      await win.keyboard.press('3')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
       const order = await win.evaluate(async () => {
         const lib = await window.photonic.libraries.last()
@@ -604,7 +806,7 @@ try {
     })
 
     await step('dedupe: the Duplicates view still shows hidden copies, labelled', async () => {
-      await win.keyboard.press('5')
+      await win.keyboard.press('3')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
       await win.keyboard.press('ArrowRight') // copies/a.jpg: a hidden copy
       await waitPath(win, 'copies/a.jpg')
@@ -633,7 +835,7 @@ try {
           sort: 'filename'
         })
         for (const i of ids)
-          if ((await window.photonic.photos.get(i)).relPath === 'c.jpg') await window.photonic.marks.set(i, 'like')
+          if ((await window.photonic.photos.get(i)).relPath === 'c.jpg') await window.photonic.marks.set(i, 1)
       })
       renameSync(join(dupes, 'c.jpg'), join(dupes, 'c-renamed.jpg'))
       await win.evaluate(async () => window.photonic.libraries.rescan((await window.photonic.libraries.last()).id))
@@ -643,7 +845,7 @@ try {
     })
 
     // ---- Like / Meh a whole folder (F) ----
-    const folderDialog = () => win.getByRole('dialog', { name: 'Like or Meh a folder' })
+    const folderDialog = () => win.getByRole('dialog', { name: 'Put a folder in a playlist' })
     const openFolderDialog = async (path) => {
       await win.keyboard.press('f')
       await folderDialog().waitFor()
@@ -658,7 +860,7 @@ try {
       await shot(win, 'folder-dialog')
       await win.keyboard.press('ArrowDown') // Meh, straight from the path field
       await folderDialog().waitFor({ state: 'detached' })
-      await win.waitForSelector('text=Marked 2 photos Meh')
+      await win.waitForSelector('text=Put 2 photos in Meh')
       assert.equal((await dupStats(win)).meh, 2)
     })
 
@@ -685,7 +887,7 @@ try {
       await win.keyboard.press('ArrowUp')
       await win.getByTestId('folder-confirm').waitFor()
       await folderDialog().getByRole('button', { name: 'Like them all' }).click()
-      await win.waitForSelector('text=Marked 2 photos Like')
+      await win.waitForSelector('text=Put 2 photos in Like')
       const s = await dupStats(win)
       assert.equal(s.meh, 0)
       assert.equal(s.like, 3) // + c-renamed.jpg from before

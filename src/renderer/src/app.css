@@ -263,6 +263,14 @@
   --tag-bg: var(--meh);
   --tag-ink: var(--on-meh);
 }
+.status-tag.other {
+  --tag-bg: var(--highlight);
+  --tag-ink: var(--on-highlight);
+}
+.score.other {
+  background: var(--highlight);
+  color: var(--on-highlight);
+}
 
 /* ---------- Done screen ---------- */
 .done-screen {
@@ -808,4 +816,172 @@
 .folder-summary.error {
   color: var(--like);
   font-weight: 700;
+}
+
+/* ---------- Playlists dropdown ---------- */
+.chip.inactive {
+  background: var(--surface);
+  color: var(--muted);
+}
+.chip.playlists.like {
+  background: var(--like);
+  color: var(--on-like);
+}
+.chip.playlists.meh {
+  background: var(--meh);
+  color: var(--on-meh);
+}
+.chip.playlists.other {
+  background: var(--highlight);
+  color: var(--on-highlight);
+}
+.chip.playlists {
+  min-width: 120px;
+  justify-content: space-between;
+}
+.popover-sep {
+  height: 2px;
+  margin: 4px 2px;
+  background: color-mix(in srgb, var(--ink) 15%, transparent);
+}
+.keycap-space {
+  display: inline-block;
+  width: 20px;
+}
+
+/* ---------- Playlists dropdown ---------- */
+.chip.inactive {
+  background: var(--surface);
+  color: var(--muted);
+}
+.chip.playlists {
+  min-width: 120px;
+  justify-content: space-between;
+}
+.chip.playlists.like {
+  background: var(--like);
+  color: var(--on-like);
+}
+.chip.playlists.meh {
+  background: var(--meh);
+  color: var(--on-meh);
+}
+.chip.playlists.other {
+  background: var(--highlight);
+  color: var(--on-highlight);
+}
+.popover-sep {
+  height: 2px;
+  margin: 4px 2px;
+  background: color-mix(in srgb, var(--ink) 15%, transparent);
+}
+.keycap-space {
+  display: inline-block;
+  width: 20px;
+}
+
+/* ---------- Manage playlists ---------- */
+.modal.manage-playlists {
+  width: min(760px, calc(100vw - 32px));
+}
+.playlist-rows {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+.playlist-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 90px 120px 60px 74px;
+  align-items: center;
+  gap: 10px;
+}
+.pl-emoticon {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.name-input {
+  padding: 6px 10px;
+  font-size: 14px;
+}
+.pl-count {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.key-chip {
+  justify-content: center;
+}
+.key-chip.capturing {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.icon-text {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.icon-text:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.builtin-note {
+  text-align: center;
+}
+.inline-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.inline-confirm > span {
+  flex: 1;
+  min-width: 240px;
+  line-height: 1.6;
+}
+.inline-confirm select {
+  font: inherit;
+}
+.new-playlist {
+  display: flex;
+  gap: 10px;
+}
+.new-playlist .search {
+  flex: 1;
+}
+.manage-message {
+  font-size: 13px;
+}
+.modal-actions.wrap {
+  flex-wrap: wrap;
+}
+.shortcut.taken > span:last-child {
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+}
+.shortcut.taken .note {
+  text-decoration: none;
+  display: inline;
+}
+.pl-swatch {
+  width: 18px;
+  height: 18px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: 3px;
+  justify-self: center;
+}
+.pl-swatch.like {
+  background: var(--like);
+}
+.pl-swatch.meh {
+  background: var(--meh);
+}
+.pl-swatch.other {
+  background: var(--highlight);
 }

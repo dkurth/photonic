@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { PhotoMeta, Status } from '@shared/types'
+import type { PhotoMeta, PlaylistId } from '@shared/types'
 
 /** The last mark made, for the toolbar button's wiggle. */
 export interface Flash {
-  status: Status
+  /** The playlist the photo was put in (null = cleared back to Unreviewed). */
+  playlistId: PlaylistId
   /** Increments on every mark, so marking the same way twice still re-triggers the wiggle. */
   n: number
 }

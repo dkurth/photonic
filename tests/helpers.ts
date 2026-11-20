@@ -5,6 +5,10 @@ import { afterEach } from 'vitest'
 
 const dirs: string[] = []
 
+/** Ids of the built-in playlists in a fresh database (migration 004 creates Like, then Meh). */
+export const LIKE = 1
+export const MEH = 2
+
 /** A fresh temp directory, removed after the current test. */
 export function tempDir(): string {
   const d = mkdtempSync(join(tmpdir(), 'photonic-test-'))

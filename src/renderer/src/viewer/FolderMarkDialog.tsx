@@ -1,36 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FolderTarget } from '@shared/types'
-import { STATUS_LABELS } from '@shared/labels'
+import type { FolderTarget, Playlist } from '@shared/types'
+import { playlistEmoticon, playlistTone } from '@shared/labels'
+import { keyLabel } from '@shared/shortcuts'
 import { Button } from '../components/Button'
 import { useKeyboard } from '../hooks/useKeyboard'
 import { fmtNumber } from './format'
 
-type Mark = 'like' | 'meh'
-const VERB: Record<Mark, string> = { like: 'Like', meh: 'Meh' }
-const OTHER: Record<Mark, Mark> = { like: 'meh', meh: 'like' }
+/** "Meh them all" for Like/Meh (the verbs), "Put them all in memes" for other playlists. */
+function choiceLabels(p: Playlist): { all: string; unreviewed: string } {
+  return p.builtin
+    ? { all: `${p.name} them all`, unreviewed: `${p.name} only the unreviewed ones` }
+    : { all: `Put them all in ${p.name}`, unreviewed: 'Only the unreviewed ones' }
+}
 
 /**
- * F: Like or Meh every photo in a folder (subfolders included) in one go. If that would overwrite
- * the opposite mark on some photos, asks whether to overwrite them or only mark the unreviewed ones.
+ * F: put every photo in a folder (subfolders included) in a playlist in one go. If some photos are
+ * already in other playlists, asks whether to move them too or only the unreviewed ones.
  */
 export function FolderMarkDialog({
   libraryId,
   initialPath,
+  playlists,
   onDone,
   onClose
 }: {
   libraryId: number
   initialPath: string
-  onDone: (result: { changed: number; status: Mark }) => void
+  playlists: Playlist[]
+  onDone: (result: { changed: number; playlist: Playlist }) => void
   onClose: () => void
 }) {
   const api = window.photonic
   const [path, setPath] = useState(initialPath)
   const [target, setTarget] = useState<FolderTarget | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [confirm, setConfirm] = useState<Mark | null>(null)
+  const [confirm, setConfirm] = useState<Playlist | null>(null)
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const up = playlists.find((p) => p.shortcut === 'ArrowUp')
+  const down = playlists.find((p) => p.shortcut === 'ArrowDown')
+  // ↓ and ↑ first (as in the toolbar), then the rest alphabetically.
+  const ordered = [down, up, ...playlists.filter((p) => p !== up && p !== down)].filter((p): p is Playlist => !!p)
 
   useEffect(() => inputRef.current?.select(), [])
 
@@ -56,22 +67,27 @@ export function FolderMarkDialog({
   }, [api, libraryId, path])
 
   const apply = useCallback(
-    async (status: Mark, mode: 'all' | 'unreviewed') => {
+    async (playlist: Playlist, mode: 'all' | 'unreviewed') => {
       if (!target || busy) return
       setBusy(true)
-      const r = await api.folders.mark(libraryId, target.dirPath, status, mode)
-      onDone({ changed: r.changed, status })
+      const r = await api.folders.mark(libraryId, target.dirPath, playlist.id, mode)
+      onDone({ changed: r.changed, playlist })
     },
     [api, busy, libraryId, onDone, target]
   )
 
-  /** Meh/Like clicked: ask first if photos carry the opposite mark. */
+  /** Photos in the folder that are in a playlist other than `p`. */
+  const elsewhere = (p: Playlist): number =>
+    target ? target.total - target.unreviewed - (target.byPlaylist[p.id] ?? 0) : 0
+
+  /** A playlist was chosen: ask first if photos are already in other playlists. */
   const choose = useCallback(
-    (status: Mark) => {
-      if (!target || target.total === 0) return
-      if (target[OTHER[status]] > 0) setConfirm(status)
-      else void apply(status, 'all')
+    (p: Playlist | undefined) => {
+      if (!p || !target || target.total === 0) return
+      if (elsewhere(p) > 0) setConfirm(p)
+      else void apply(p, 'all')
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [apply, target]
   )
 
@@ -93,15 +109,28 @@ export function FolderMarkDialog({
 
   const canMark = !!target && target.total > 0 && !busy
 
+  /** "20 photos in that folder are marked Like" / "…are in other playlists (12 Like, 8 memes)". */
+  const conflictText = (p: Playlist): string => {
+    const n = elsewhere(p)
+    const others = playlists.filter((o) => o.id !== p.id && (target?.byPlaylist[o.id] ?? 0) > 0)
+    const photos = `${fmtNumber(n)} ${n === 1 ? 'photo' : 'photos'} in that folder ${n === 1 ? 'is' : 'are'}`
+    if (others.length === 1) {
+      const o = others[0]
+      return `${photos} ${o.builtin ? 'marked' : 'in'} ${o.name}. Do you want to overwrite that?`
+    }
+    const list = others.map((o) => `${fmtNumber(target!.byPlaylist[o.id])} ${o.name}`).join(', ')
+    return `${photos} in other playlists (${list}). Do you want to overwrite that?`
+  }
+
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         className="modal folder-mark"
         role="dialog"
-        aria-label="Like or Meh a folder"
+        aria-label="Put a folder in a playlist"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="modal-title pixel">LIKE OR MEH A FOLDER</div>
+        <div className="modal-title pixel">PUT A FOLDER IN A PLAYLIST</div>
         {!confirm ? (
           <>
             <div className="path-row">
@@ -114,9 +143,9 @@ export function FolderMarkDialog({
                 value={path}
                 onChange={(e) => setPath(e.target.value)}
                 onKeyDown={(e) => {
-                  // ↑/↓ mark (like everywhere else); Escape closes.
-                  if (e.key === 'ArrowUp') choose('like')
-                  else if (e.key === 'ArrowDown') choose('meh')
+                  // ↑/↓ put it in those keys' playlists (like everywhere else); Escape closes.
+                  if (e.key === 'ArrowUp') choose(up)
+                  else if (e.key === 'ArrowDown') choose(down)
                   else if (e.key === 'Escape') onClose()
                   else return
                   e.preventDefault()
@@ -137,50 +166,55 @@ export function FolderMarkDialog({
                     <>
                       <strong>{fmtNumber(target.total)}</strong> {target.total === 1 ? 'photo' : 'photos'} in this
                       folder (including subfolders)
-                      {(target.like > 0 || target.meh > 0) && (
+                      {target.unreviewed < target.total && (
                         <span className="note">
                           {' '}
-                          · {fmtNumber(target.unreviewed)} unreviewed, {fmtNumber(target.like)} Like,{' '}
-                          {fmtNumber(target.meh)} Meh
+                          · {fmtNumber(target.unreviewed)} unreviewed
+                          {playlists
+                            .filter((p) => (target.byPlaylist[p.id] ?? 0) > 0)
+                            .map((p) => `, ${fmtNumber(target.byPlaylist[p.id])} ${p.name}`)
+                            .join('')}
                         </span>
                       )}
                     </>
                   )))}
             </div>
-            <div className="modal-actions">
+            <div className="modal-actions wrap">
               <Button size="small" keys={['Esc']} onClick={onClose}>
                 Cancel
               </Button>
-              <Button size="small" variant="meh" keys={['↓']} disabled={!canMark} onClick={() => choose('meh')}>
-                <span className="emoticon">{STATUS_LABELS.meh.emoticon}</span> Meh
-              </Button>
-              <Button size="small" variant="like" keys={['↑']} disabled={!canMark} onClick={() => choose('like')}>
-                <span className="emoticon">{STATUS_LABELS.like.emoticon}</span> Like
-              </Button>
+              {ordered.map((p) => (
+                <Button
+                  key={p.id}
+                  size="small"
+                  variant={playlistTone(p) === 'other' ? 'other' : playlistTone(p)}
+                  keys={p === up || p === down ? [keyLabel(p.shortcut!)] : undefined}
+                  disabled={!canMark}
+                  onClick={() => choose(p)}
+                >
+                  {playlistEmoticon(p) && <span className="emoticon">{playlistEmoticon(p)}</span>} {p.name}
+                </Button>
+              ))}
             </div>
           </>
         ) : (
           <>
-            <p data-testid="folder-confirm">
-              <strong>{fmtNumber(target![OTHER[confirm]])}</strong> {target![OTHER[confirm]] === 1 ? 'photo' : 'photos'}{' '}
-              in that folder {target![OTHER[confirm]] === 1 ? 'is' : 'are'} marked {VERB[OTHER[confirm]]}. Do you want
-              to overwrite that?
-            </p>
+            <p data-testid="folder-confirm">{conflictText(confirm)}</p>
             <div className="modal-actions">
               <Button size="small" keys={['Esc']} onClick={() => setConfirm(null)}>
                 Cancel
               </Button>
               <Button size="small" keys={['U']} disabled={busy} onClick={() => void apply(confirm, 'unreviewed')}>
-                {VERB[confirm]} only the unreviewed ones
+                {choiceLabels(confirm).unreviewed}
               </Button>
               <Button
                 size="small"
-                variant={confirm}
+                variant={playlistTone(confirm) === 'other' ? 'other' : playlistTone(confirm)}
                 keys={['A']}
                 disabled={busy}
                 onClick={() => void apply(confirm, 'all')}
               >
-                {VERB[confirm]} them all
+                {choiceLabels(confirm).all}
               </Button>
             </div>
           </>

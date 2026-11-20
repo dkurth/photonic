@@ -8,15 +8,16 @@ See [PLAN.md](PLAN.md) for the full design and milestone notes.
 
 | Key | Action |
 |---|---|
-| `↑` / `↓` | Like / Meh, then jump to the next unreviewed photo |
+| `↑` / `↓` | Like / Meh (the default playlist keys), then jump to the next unreviewed photo |
+| your keys | Put the photo in the playlist you gave that key (Playlists → Manage Playlists…) |
 | `←` / `→` | Previous / next photo |
 | `U` | Clear the mark |
 | `⌘Z` | Undo (including a whole "hide duplicates" batch) |
-| `1`–`4` | All / Unreviewed / Like / Meh (`5` = Duplicates) |
+| `1` `2` | All / Unreviewed (`3` = Duplicates); playlists are in the Playlists dropdown |
 | `S` / `R` | Order: filename → date → random / reshuffle |
 | `Space` | Zoom to 100% (drag to pan) |
 | `C` / `O` | Copy the full path / show in Finder |
-| `F` | Like or Meh a whole folder |
+| `F` | Put a whole folder in a playlist |
 | `H` | Hide toolbars |
 | `?` | All shortcuts |
 

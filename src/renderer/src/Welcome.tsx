@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Library } from '@shared/types'
-import { STATUS_LABELS } from '@shared/labels'
+import { BUILTIN_EMOTICONS } from '@shared/labels'
 import { Button } from './components/Button'
 import { Logo } from './components/Logo'
 
@@ -16,10 +16,10 @@ export function Welcome({ onOpenFolder, onOpen }: { onOpenFolder: () => void; on
         <Logo size={48} />
         <p className="tagline">
           <span>
-            Like it <span className="emoticon">{STATUS_LABELS.like.emoticon}</span>
+            Like it <span className="emoticon">{BUILTIN_EMOTICONS.like}</span>
           </span>
           <span>
-            Meh it <span className="emoticon">{STATUS_LABELS.meh.emoticon}</span>
+            Meh it <span className="emoticon">{BUILTIN_EMOTICONS.meh}</span>
           </span>
           <span>Move on.</span>
         </p>

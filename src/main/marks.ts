@@ -1,11 +1,5 @@
-import type { Status, UndoChange, UndoResult } from '@shared/types'
+import type { PlaylistId, UndoChange, UndoResult } from '@shared/types'
 import type { DB } from './db'
-
-export const STATUSES: readonly Status[] = ['unreviewed', 'like', 'meh']
-
-export function isStatus(v: unknown): v is Status {
-  return typeof v === 'string' && (STATUSES as readonly string[]).includes(v)
-}
 
 export interface MarkOptions {
   /** 'user' for keypresses; bulk actions use their own name (e.g. 'dedupe'). */
@@ -17,7 +11,7 @@ export interface MarkOptions {
 const logEvent = (
   db: DB,
   photoId: number,
-  field: 'status' | 'hidden',
+  field: 'playlist' | 'hidden',
   oldValue: string,
   newValue: string,
   opts: MarkOptions
@@ -28,23 +22,27 @@ const logEvent = (
     )
     .run(photoId, field, oldValue, newValue, opts.source ?? 'user', opts.batchId ?? null)
 
+const playlistValue = (id: PlaylistId): string => (id === null ? '' : String(id))
+
 /**
- * Sets a photo's status and appends to `mark_events`, in one transaction.
- * Setting the status it already has is a no-op (nothing is logged). Returns false if the photo doesn't exist.
+ * Puts a photo in a playlist (null = back to Unreviewed) and appends to `mark_events`, in one
+ * transaction. Setting the playlist it's already in is a no-op (nothing logged). Returns false if
+ * the photo doesn't exist.
  */
-export function setStatus(db: DB, photoId: number, status: Status, opts: MarkOptions = {}): boolean {
+export function setPlaylist(db: DB, photoId: number, playlistId: PlaylistId, opts: MarkOptions = {}): boolean {
   return db.transaction(() => {
-    const old = db.prepare('SELECT status FROM photos WHERE id = ?').pluck().get(photoId) as Status | undefined
-    if (old === undefined) return false
-    if (old === status) return true
-    db.prepare("UPDATE photos SET status = ?, status_at = datetime('now') WHERE id = ?").run(status, photoId)
-    logEvent(db, photoId, 'status', old, status, opts)
+    const row = db.prepare('SELECT playlist_id FROM photos WHERE id = ?').get(photoId) as
+      { playlist_id: number | null } | undefined
+    if (!row) return false
+    if (row.playlist_id === playlistId) return true
+    db.prepare("UPDATE photos SET playlist_id = ?, marked_at = datetime('now') WHERE id = ?").run(playlistId, photoId)
+    logEvent(db, photoId, 'playlist', playlistValue(row.playlist_id), playlistValue(playlistId), opts)
     return true
   })()
 }
 
 /**
- * Hides a photo from review (or shows it again) without touching its status, logged for undo.
+ * Hides a photo from review (or shows it again) without touching its playlist, logged for undo.
  * `reason` names the feature doing it (e.g. 'duplicate'); see visibleSql.
  */
 export function setHidden(
@@ -96,7 +94,7 @@ export function undoLast(db: DB, libraryId: number): UndoResult | null {
       .get(libraryId) as { id: number; batch_id: number | null } | undefined
     if (!last) return null
 
-    type Ev = { id: number; photo_id: number; field: 'status' | 'hidden'; old_value: string }
+    type Ev = { id: number; photo_id: number; field: 'playlist' | 'hidden'; old_value: string }
     const events = (
       last.batch_id === null
         ? db.prepare('SELECT id, photo_id, field, old_value FROM mark_events WHERE id = ?').all(last.id)
@@ -107,7 +105,8 @@ export function undoLast(db: DB, libraryId: number): UndoResult | null {
             .all(last.batch_id)
     ) as Ev[]
 
-    const restoreStatus = db.prepare("UPDATE photos SET status = ?, status_at = datetime('now') WHERE id = ?")
+    const restorePlaylist = db.prepare("UPDATE photos SET playlist_id = ?, marked_at = datetime('now') WHERE id = ?")
+    const playlistExists = db.prepare('SELECT 1 FROM playlists WHERE id = ?')
     const restoreHidden = db.prepare('UPDATE photos SET hidden = ?, hidden_reason = ? WHERE id = ?')
     const flag = db.prepare('UPDATE mark_events SET undone = 1 WHERE id = ?')
     const changes: UndoChange[] = []
@@ -117,8 +116,11 @@ export function undoLast(db: DB, libraryId: number): UndoResult | null {
         restoreHidden.run(hidden ? 1 : 0, hidden ? e.old_value.slice(2) || null : null, e.photo_id)
         changes.push({ photoId: e.photo_id, field: 'hidden', hidden })
       } else {
-        restoreStatus.run(e.old_value, e.photo_id)
-        changes.push({ photoId: e.photo_id, field: 'status', status: e.old_value as Status })
+        // A playlist deleted since then can't come back: such photos return to Unreviewed.
+        let playlistId: PlaylistId = e.old_value === '' ? null : Number(e.old_value)
+        if (playlistId !== null && !playlistExists.get(playlistId)) playlistId = null
+        restorePlaylist.run(playlistId, e.photo_id)
+        changes.push({ photoId: e.photo_id, field: 'playlist', playlistId })
       }
       flag.run(e.id)
     }

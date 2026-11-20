@@ -167,19 +167,19 @@ export function compareKeeper(a: string, b: string): number {
 }
 
 /**
- * Copies that "Hide duplicates" would hide (PLAN.md §8). Hiding never changes a photo's Like/Meh
- * status, and copies you've marked are never hidden:
- * - a group with a marked copy (Like or Meh) keeps its marked copies, and its unreviewed ones are hidden;
+ * Copies that "Hide duplicates" would hide (PLAN.md §8). Hiding never changes which playlist a
+ * photo is in, and copies you've put in a playlist are never hidden:
+ * - a group with a copy in a playlist keeps those copies, and its unreviewed ones are hidden;
  * - otherwise one unreviewed copy stays (see compareKeeper) and the other copies are hidden;
  * - copies already hidden are left as they are.
  */
 export function planHide(db: DB, libraryId: number): number[] {
   const rows = db
     .prepare(
-      `SELECT h.content_hash AS hash, p.id, p.rel_path, p.status FROM photo_hashes h JOIN photos p ON p.id = h.photo_id
+      `SELECT h.content_hash AS hash, p.id, p.rel_path, p.playlist_id FROM photo_hashes h JOIN photos p ON p.id = h.photo_id
        WHERE p.library_id = ? AND p.missing = 0 AND p.hidden = 0 AND ${FRESH} AND h.content_hash IN (${DUP_HASHES})`
     )
-    .all(libraryId, libraryId) as { hash: string; id: number; rel_path: string; status: string }[]
+    .all(libraryId, libraryId) as { hash: string; id: number; rel_path: string; playlist_id: number | null }[]
 
   const groups = new Map<string, typeof rows>()
   for (const r of rows) groups.set(r.hash, [...(groups.get(r.hash) ?? []), r])
@@ -187,7 +187,7 @@ export function planHide(db: DB, libraryId: number): number[] {
   const toHide: number[] = []
   for (const g of groups.values()) {
     if (g.length < 2) continue // the other copies are already hidden
-    const unreviewed = g.filter((r) => r.status === 'unreviewed')
+    const unreviewed = g.filter((r) => r.playlist_id === null)
     if (!unreviewed.length) continue
     if (unreviewed.length < g.length) {
       toHide.push(...unreviewed.map((r) => r.id)) // a marked copy stays visible

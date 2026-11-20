@@ -36,13 +36,23 @@ const api: PhotonicAPI = {
     copyPath: (id) => ipcRenderer.invoke('photos:copyPath', id)
   },
   marks: {
-    set: (photoId, status) => ipcRenderer.invoke('marks:set', photoId, status),
+    set: (photoId, playlistId) => ipcRenderer.invoke('marks:set', photoId, playlistId),
     undo: (libraryId) => ipcRenderer.invoke('marks:undo', libraryId)
   },
   folders: {
     resolve: (libraryId, path) => ipcRenderer.invoke('folders:resolve', libraryId, path),
     pick: (libraryId) => ipcRenderer.invoke('folders:pick', libraryId),
-    mark: (libraryId, dirPath, status, mode) => ipcRenderer.invoke('folders:mark', libraryId, dirPath, status, mode)
+    mark: (libraryId, dirPath, playlistId, mode) =>
+      ipcRenderer.invoke('folders:mark', libraryId, dirPath, playlistId, mode)
+  },
+  playlists: {
+    list: () => ipcRenderer.invoke('playlists:list'),
+    create: (name) => ipcRenderer.invoke('playlists:create', name),
+    rename: (id, name) => ipcRenderer.invoke('playlists:rename', id, name),
+    setShortcut: (id, key) => ipcRenderer.invoke('playlists:setShortcut', id, key),
+    resetShortcuts: (systemKeys) => ipcRenderer.invoke('playlists:resetShortcuts', systemKeys),
+    remove: (id, moveTo) => ipcRenderer.invoke('playlists:remove', id, moveTo),
+    onChanged: (cb) => on<void>('playlists:changed', () => cb())
   },
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),

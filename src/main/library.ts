@@ -38,9 +38,8 @@ export function libraryStats(db: DB, id: number, vis: Visibility = {}): LibraryS
          count(*) FILTER (WHERE ${shown})                              AS total,
          count(*) FILTER (WHERE missing = 0 AND NOT (${shown}))        AS hidden,
          count(*) FILTER (WHERE missing = 1)                           AS missing,
-         count(*) FILTER (WHERE ${shown} AND status = 'unreviewed')    AS unreviewed,
-         count(*) FILTER (WHERE ${shown} AND status = 'like')          AS "like",
-         count(*) FILTER (WHERE ${shown} AND status = 'meh')           AS meh,
+         count(*) FILTER (WHERE ${shown} AND playlist_id IS NULL)      AS unreviewed,
+         count(*) FILTER (WHERE ${shown} AND playlist_id IS NOT NULL)  AS reviewed,
          count(*) FILTER (WHERE ${shown} AND meta_read_at IS NOT NULL) AS metaRead,
          count(*) FILTER (WHERE ${shown} AND taken_at IS NOT NULL)     AS withTakenAt,
          count(DISTINCT dir_path) FILTER (WHERE ${shown})              AS folders

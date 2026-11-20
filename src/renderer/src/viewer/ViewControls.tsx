@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import type { Filter, SortOrder, StatusCounts, ViewSpec } from '@shared/types'
-import { STATUS_LABELS } from '@shared/labels'
+import { useEffect, useState, type ReactNode } from 'react'
+import type { Filter, Playlist, SortOrder, StatusCounts, ViewSpec } from '@shared/types'
+import { playlistEmoticon, playlistTone, UNREVIEWED_LABEL } from '@shared/labels'
+import { keyLabel } from '@shared/shortcuts'
 import { KeyCap } from '../components/KeyCap'
 import { useKeyboard } from '../hooks/useKeyboard'
 import { fmtNumber } from './format'
@@ -11,11 +12,10 @@ export interface FilterDef {
   label: string
 }
 
+/** Core filters. Playlists have their own dropdown; features add more (Duplicates = 3). */
 export const FILTERS: FilterDef[] = [
   { id: 'all', key: '1', label: 'All' },
-  { id: 'unreviewed', key: '2', label: STATUS_LABELS.unreviewed.label },
-  { id: 'like', key: '3', label: STATUS_LABELS.like.label },
-  { id: 'meh', key: '4', label: STATUS_LABELS.meh.label }
+  { id: 'unreviewed', key: '2', label: UNREVIEWED_LABEL }
 ]
 
 export const SORTS: SortOrder[] = ['filename', 'date', 'random']
@@ -25,58 +25,83 @@ export function nextSort(s: SortOrder): SortOrder {
   return SORTS[(SORTS.indexOf(s) + 1) % SORTS.length]
 }
 
+export const playlistFilter = (id: number): Filter => `playlist:${id}`
+export function filterPlaylistId(f: Filter): number | null {
+  const m = /^playlist:(\d+)$/.exec(f)
+  return m ? Number(m[1]) : null
+}
+
 function countFor(id: Filter, counts: StatusCounts | null): number | null {
   if (!counts) return null
   if (id === 'all') return counts.total
   if (id === 'unreviewed') return counts.unreviewed
-  if (id === 'like') return counts.like
-  if (id === 'meh') return counts.meh
   return null // feature filters (e.g. duplicates) don't have a cheap count
 }
 
+interface MenuItem {
+  key: string
+  /** Shortcut shown as a key cap. */
+  cap?: string
+  label: ReactNode
+  count?: number | null
+  current?: boolean
+  testId: string
+  onChoose: () => void
+}
+
 /**
- * The current filter as one chip; click it for a dropdown of all filters (core + features).
- * Number keys still switch directly without opening it (PLAN.md §2).
+ * A chip that opens a list (PLAN.md §12). While open: ↑/↓ + Enter choose, Esc closes, and
+ * `extraKeys` (e.g. the filter number keys) choose directly.
  */
-function FilterMenu({
-  view,
-  filters,
-  counts,
+function DropdownChip({
+  chip,
+  chipClass,
+  chipTitle,
+  testId,
+  value,
+  ariaLabel,
+  items,
   open,
   onOpenChange,
-  onFilter
+  extraKeys = {}
 }: {
-  view: ViewSpec
-  filters: FilterDef[]
-  counts: StatusCounts | null
+  chip: ReactNode
+  chipClass: string
+  chipTitle: string
+  testId: string
+  /** What it currently shows (exposed as data-value, e.g. for tests). */
+  value: string
+  ariaLabel: string
+  items: (MenuItem | 'separator')[]
   open: boolean
   onOpenChange: (open: boolean) => void
-  onFilter: (f: Filter) => void
+  extraKeys?: Record<string, () => void>
 }) {
-  const current = filters.find((f) => f.id === view.filter) ?? filters[0]
+  const choosable = items.filter((i): i is MenuItem => i !== 'separator')
   const [sel, setSel] = useState(0)
   useEffect(() => {
     if (open)
       setSel(
         Math.max(
           0,
-          filters.findIndex((f) => f.id === view.filter)
+          choosable.findIndex((i) => i.current)
         )
       )
-  }, [open, filters, view.filter])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
-  const choose = (f: FilterDef | undefined): void => {
+  const choose = (item: MenuItem | undefined): void => {
     onOpenChange(false)
-    if (f) onFilter(f.id)
+    item?.onChoose()
   }
 
   useKeyboard(
     {
-      ArrowDown: () => setSel((i) => Math.min(i + 1, filters.length - 1)),
+      ArrowDown: () => setSel((i) => Math.min(i + 1, choosable.length - 1)),
       ArrowUp: () => setSel((i) => Math.max(i - 1, 0)),
-      Enter: () => choose(filters[sel]),
+      Enter: () => choose(choosable[sel]),
       Escape: () => onOpenChange(false),
-      ...Object.fromEntries(filters.map((f) => [f.key, () => choose(f)]))
+      ...Object.fromEntries(Object.entries(extraKeys).map(([k, run]) => [k, () => (onOpenChange(false), run())]))
     },
     open
   )
@@ -84,41 +109,44 @@ function FilterMenu({
   return (
     <div className="filter-menu">
       <button
-        className={`chip filter ${current.id} ${open ? 'open' : ''}`}
+        className={`chip ${chipClass} ${open ? 'open' : ''}`}
         onClick={() => onOpenChange(!open)}
         onMouseDown={(e) => e.preventDefault()}
-        title={`Show: ${current.label} (${filters[0].key}–${filters[filters.length - 1].key} to switch)`}
+        title={chipTitle}
         aria-haspopup="listbox"
         aria-expanded={open}
-        data-testid="filter"
-        data-filter={current.id}
+        data-testid={testId}
+        data-value={value}
       >
-        <span className="chip-label">{current.label}</span>
+        {chip}
         <span className="caret">▾</span>
       </button>
       {open && (
         <>
           <div className="popover-backdrop" onMouseDown={() => onOpenChange(false)} />
-          <div className="popover" role="listbox" aria-label="Filter">
-            {filters.map((f, i) => {
-              const n = countFor(f.id, counts)
-              return (
+          <div className="popover" role="listbox" aria-label={ariaLabel}>
+            {items.map((item, i) =>
+              item === 'separator' ? (
+                <div key={`sep-${i}`} className="popover-sep" />
+              ) : (
                 <div
-                  key={f.id}
+                  key={item.key}
                   role="option"
-                  aria-selected={f.id === view.filter}
-                  className={`popover-item ${i === sel ? 'selected' : ''} ${f.id === view.filter ? 'current' : ''} ${f.id}`}
-                  onMouseEnter={() => setSel(i)}
+                  aria-selected={!!item.current}
+                  className={`popover-item ${choosable[sel] === item ? 'selected' : ''} ${item.current ? 'current' : ''}`}
+                  onMouseEnter={() => setSel(choosable.indexOf(item))}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => choose(f)}
-                  data-testid={`filter-option-${f.id}`}
+                  onClick={() => choose(item)}
+                  data-testid={item.testId}
                 >
-                  <KeyCap k={f.key} />
-                  <span className="popover-label">{f.label}</span>
-                  {n !== null && <span className="popover-count pixel">{fmtNumber(n)}</span>}
+                  {item.cap ? <KeyCap k={item.cap} /> : <span className="keycap-space" />}
+                  <span className="popover-label">{item.label}</span>
+                  {item.count !== undefined && item.count !== null && (
+                    <span className="popover-count pixel">{fmtNumber(item.count)}</span>
+                  )}
                 </div>
               )
-            })}
+            )}
           </div>
         </>
       )}
@@ -126,36 +154,94 @@ function FilterMenu({
   )
 }
 
-/** Filter and sort controls in the top bar. Every one has a key (PLAN.md §2). */
+/** Filter, playlist and sort controls in the top bar. Every one has a key (PLAN.md §2). */
 export function ViewControls({
   view,
   filters,
+  playlists,
   counts,
-  filterMenuOpen,
-  onFilterMenu,
+  openMenu,
+  onOpenMenu,
   pressed,
   onFilter,
+  onManagePlaylists,
   onSort
 }: {
   view: ViewSpec
   /** Core filters plus any added by optional features. */
   filters: FilterDef[]
+  playlists: Playlist[]
   counts: StatusCounts | null
-  filterMenuOpen: boolean
-  onFilterMenu: (open: boolean) => void
+  openMenu: 'filter' | 'playlists' | null
+  onOpenMenu: (menu: 'filter' | 'playlists' | null) => void
   pressed: Set<string>
   onFilter: (f: Filter) => void
+  onManagePlaylists: () => void
   onSort: () => void
 }) {
+  const currentFilter = filters.find((f) => f.id === view.filter)
+  const viewing = playlists.find((p) => p.id === filterPlaylistId(view.filter))
+
   return (
     <div className="view-controls">
-      <FilterMenu
-        view={view}
-        filters={filters}
-        counts={counts}
-        open={filterMenuOpen}
-        onOpenChange={onFilterMenu}
-        onFilter={onFilter}
+      <DropdownChip
+        testId="filter"
+        value={view.filter}
+        ariaLabel="Filter"
+        chipClass={`filter ${currentFilter ? currentFilter.id : 'inactive'}`}
+        chipTitle={`Show: ${currentFilter?.label ?? 'a playlist'} (${filters.map((f) => f.key).join(', ')} to switch)`}
+        chip={<span className="chip-label">{currentFilter?.label ?? 'Filter'}</span>}
+        open={openMenu === 'filter'}
+        onOpenChange={(o) => onOpenMenu(o ? 'filter' : null)}
+        extraKeys={Object.fromEntries(filters.map((f) => [f.key, () => onFilter(f.id)]))}
+        items={filters.map((f) => ({
+          key: f.id,
+          cap: f.key,
+          label: f.label,
+          count: countFor(f.id, counts),
+          current: f.id === view.filter,
+          testId: `filter-option-${f.id}`,
+          onChoose: () => onFilter(f.id)
+        }))}
+      />
+      <DropdownChip
+        testId="playlists"
+        value={viewing ? String(viewing.id) : ''}
+        ariaLabel="Playlists"
+        chipClass={`playlists ${viewing ? playlistTone(viewing) : 'inactive'}`}
+        chipTitle={viewing ? `Showing the ${viewing.name} playlist` : 'Playlists'}
+        chip={
+          <span className="chip-label">
+            {viewing ? (
+              <>
+                {playlistEmoticon(viewing) && <span className="emoticon">{playlistEmoticon(viewing)} </span>}
+                {viewing.name}
+              </>
+            ) : (
+              'Playlists'
+            )}
+          </span>
+        }
+        open={openMenu === 'playlists'}
+        onOpenChange={(o) => onOpenMenu(o ? 'playlists' : null)}
+        items={[
+          { key: 'manage', label: 'Manage Playlists…', testId: 'manage-playlists', onChoose: onManagePlaylists },
+          'separator',
+          ...playlists.map((p) => ({
+            key: `pl-${p.id}`,
+            cap: p.shortcut ? keyLabel(p.shortcut) : undefined,
+            label: (
+              <>
+                {playlistEmoticon(p) && <span className="emoticon">{playlistEmoticon(p)} </span>}
+                {p.name}
+              </>
+            ),
+            count: counts ? (counts.byPlaylist[p.id] ?? 0) : null,
+            current: viewing?.id === p.id,
+            testId: `playlist-option-${p.id}`,
+            onChoose: () => onFilter(playlistFilter(p.id))
+          }))
+        ]}
       />
       <button
         className={`chip sort ${pressed.has('sort') ? 'pressed' : ''}`}

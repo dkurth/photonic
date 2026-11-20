@@ -3,6 +3,7 @@
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
 Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
+- v2.0: **Playlists** (§14). Every photo is Unreviewed or in exactly one playlist; Like and Meh are the two built-in playlists (renamable, not deletable). Each playlist can have a single-key shortcut. Migration 004 turns `photos.status` into `photos.playlist_id`. The first dropdown is now All / Unreviewed / Duplicates (`1`/`2`/`3`), next to a new Playlists dropdown.
 - v1.7: Marking feedback is a small wiggle of the Like/Meh toolbar button (the centre badge, border flash and hearts are gone). **Faster photo switching:** the next photos are kept *in the stage* as invisible `<img>` elements, explicitly decoded, and metadata already in the cache is used in the same render as the keypress. Measured on 12 MP JPEGs, the time from keypress to the next photo painted: typically 4–12 ms, worst 9–19 ms at ~2 presses/s (was ~65 ms on the first press), and ≤17 ms at ~7 presses/s in most runs. Sustained very fast pressing on very large photos is limited by JPEG decoding (~90 ms per 12 MP photo); screen-sized previews would be the next step if that ever matters.
 - v1.6: `PHOTONIC_HIDDEN=1` runs the app without ever showing its window or taking focus (no Dock icon, rendering still works for Playwright and screenshots). The e2e suite always uses it.
 - v1.5: **Like / Meh a whole folder** (`F`): type a folder path (absolute, relative to the library, or `~/…`) or browse, see how many photos it holds (subfolders included), then Meh / Like / Cancel. If photos carry the opposite mark, it asks first: *"20 photos in that folder are marked Like. Do you want to overwrite that?"* → *Meh them all* / *Meh only the unreviewed ones*. One batch, so one ⌘Z undoes it. **Full-screen mode removed** (the window isn't fullscreenable; `F` is reused). The date no longer adds "· no EXIF date".
@@ -60,15 +61,16 @@ Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
 |---|---|
 | `→` | Next photo (no change) |
 | `←` | Previous photo (no change) |
-| `↑` | Mark **Like** ⸜(｡˃ ᵕ ˂ )⸝♡, then go to the **next unreviewed** photo |
-| `↓` | Mark **Meh** ¯\_(ツ)_/¯, then go to the **next unreviewed** photo |
+| `↑` | Put in **Like** ⸜(｡˃ ᵕ ˂ )⸝♡ (by default), then go to the **next unreviewed** photo |
+| `↓` | Put in **Meh** ¯\_(ツ)_/¯ (by default), then go to the **next unreviewed** photo |
+| *any key you give a playlist* | Put in that playlist, then go to the next unreviewed photo (§14) |
 | `Backspace` / `U` | Clear the mark (back to *unreviewed*); stay on this photo |
 | `Cmd+Z` | Undo the last mark (or the last bulk action) and go back to that photo |
 | `Home` / `End` | First / last photo (also the ⏮ ⏭ buttons) |
 | `S` | Cycle sort order: Filename → Capture date → Random |
 | `R` | Reshuffle (random order only) |
-| `1` `2` `3` `4` | Filter: All / Unreviewed / Like / Meh |
-| `5` | Filter: Duplicates *(only when the duplicates feature is on)* |
+| `1` `2` | Filter: All / Unreviewed (playlists are in the Playlists dropdown) |
+| `3` | Filter: Duplicates *(only when the duplicates feature is on)* |
 | `D` | Show other copies of this photo *(only when the duplicates feature is on)* |
 | `C` | Copy the full path to the clipboard |
 | `O` | Show the file in Finder |
@@ -666,10 +668,25 @@ These are popular, long-running palettes from Coolors' trending list. (I picked 
 
 ---
 
-## 13. Later (not in this plan yet)
+## 14. Playlists (v2.0)
 
-- **Export Liked photos** (for ordering prints) and **playlists**. Details to be worked out later. One rule to follow now so both stay easy: **`photos.listIds(view)` stays the only place that decides which photos are in a view**, so a future action can take a `ViewSpec` (or a playlist) and get its photos the same way the viewer does.
-- **Playlists:** `playlists(id, name, created_at)` and `playlist_items(playlist_id, photo_id, position)`, viewed with the same viewer.
+**Model: every photo is Unreviewed or in exactly one playlist.** Like and Meh are simply the two built-in playlists, so "mark" and "put in a playlist" are the same thing.
+
+- **Data:** `playlists(id, name, builtin, shortcut)`; `builtin` is `'like'`/`'meh'` for the two that can be renamed but not deleted. `photos.playlist_id` (NULL = Unreviewed) replaced `photos.status` (migration 004, which also converts existing marks and the undo log). Playlists are **shared by all libraries**, like keyboard shortcuts.
+- **Keys:** each playlist can have one single key (`shortcut`, a `KeyboardEvent.key`). Defaults: Like = ↑, Meh = ↓. Esc / Enter / Tab are reserved for dialogs; keys with ⌘/⌃/⌥ aren't allowed.
+  - Giving a playlist a key **another playlist** has asks first, then moves it.
+  - Giving it a key **the app uses** (e.g. `S` = change order) warns first, then allows it: the playlist wins. Playlist keys are handled in the capture phase, before every other key handler. The `?` overlay shows the overridden app shortcut struck through.
+  - **Reset shortcuts:** Like ↑, Meh ↓; keys that clash with the app's own are removed; other keys stay.
+- **Marking:** a playlist's key (or its button) puts the photo in it and moves to the next unreviewed photo, exactly like ↑/↓ always did. `U`/⌫ send it back to Unreviewed. ⌘Z undoes it.
+- **Top bar:** the first dropdown is All / Unreviewed (+ Duplicates). The **Playlists** dropdown has *Manage Playlists…*, then every playlist alphabetically (with key and count); choosing one shows just its photos, where they can be recategorized.
+- **Manage Playlists:** rename (inline), set/remove the key, delete (not Like/Meh), create, reset shortcuts.
+- **Deleting** a playlist asks where its photos go (Unreviewed or another playlist). It can't be undone (the playlist is gone), so its entries in the undo log are retired.
+- **Toolbar:** the two marking buttons are whichever playlists are on ↓ and ↑. **Done screen:** a score for Like, Meh and every playlist with photos. **Folder dialog (`F`):** a button per playlist; overwriting other playlists asks first ("…are marked Like" / "…are in other playlists (12 Like, 8 memes)").
+- **Duplicates:** "copies you've marked" now means "copies in any playlist".
+
+## 15. Later (not in this plan yet)
+
+- **Export Liked photos** (for ordering prints) and other playlists. Details to be worked out later. One rule to follow now so both stay easy: **`photos.listIds(view)` stays the only place that decides which photos are in a view**, so a future action can take a `ViewSpec` (or a playlist) and get its photos the same way the viewer does.
 - Thumbnail grid view, a full EXIF info panel, near-duplicate detection (perceptual hashes), optional 8-bit sounds.
 
 ---

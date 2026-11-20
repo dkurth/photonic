@@ -1,6 +1,6 @@
 // UI for the dedupe feature (PLAN.md §8). Removable: delete this folder and its line in ../index.ts.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DuplicateSummary, PhotoMeta } from '@shared/types'
+import type { DuplicateSummary, PhotoMeta, Playlist } from '@shared/types'
 import { Button } from '../../components/Button'
 import { StatusTag } from '../../components/StatusTag'
 import { useKeyboard } from '../../hooks/useKeyboard'
@@ -30,7 +30,7 @@ function CopiesBadge({ ctx }: { ctx: FeatureContext }) {
   )
 }
 
-function CopiesPanel({ meta, onClose }: { meta: PhotoMeta; onClose: () => void }) {
+function CopiesPanel({ meta, playlists, onClose }: { meta: PhotoMeta; playlists: Playlist[]; onClose: () => void }) {
   const [copies, setCopies] = useState<PhotoMeta[] | null>(null)
   useEffect(() => {
     void window.photonic.duplicates.copies(meta.id).then(setCopies)
@@ -41,13 +41,13 @@ function CopiesPanel({ meta, onClose }: { meta: PhotoMeta; onClose: () => void }
         <div className="modal-title pixel">IDENTICAL COPIES</div>
         <div className="copies-list">
           <div className="copy-row current">
-            <StatusTag status={meta.status} />
+            <StatusTag playlist={playlists.find((p) => p.id === meta.playlistId) ?? null} />
             <span className="mono">{meta.absPath}</span>
             <span className="note">this one{meta.hidden ? ' · hidden' : ''}</span>
           </div>
           {copies?.map((c) => (
             <div key={c.id} className="copy-row">
-              <StatusTag status={c.status} />
+              <StatusTag playlist={playlists.find((p) => p.id === c.playlistId) ?? null} />
               <span className="mono">{c.absPath}</span>
               <span className="note">{c.hidden ? 'hidden' : ''}</span>
             </div>
@@ -71,8 +71,8 @@ function ConfirmHide({ count, onConfirm, onClose }: { count: number; onConfirm: 
         <div className="modal-title pixel">HIDE DUPLICATES</div>
         <p>
           Hide <strong>{fmtNumber(count)}</strong> extra {count === 1 ? 'copy' : 'copies'} so each photo only comes up
-          once when reviewing? Hidden copies keep their marks (they are <em>not</em> marked Meh), copies you've already
-          marked stay visible, and no files are touched. They're still listed under Duplicates, and{' '}
+          once when reviewing? Hidden copies keep their playlists (they are <em>not</em> put in Meh), copies already in
+          a playlist stay visible, and no files are touched. They're still listed under Duplicates, and{' '}
           <kbd className="keycap">⌘Z</kbd> brings them all back.
         </p>
         <div className="modal-actions">
@@ -160,7 +160,7 @@ function DedupeLayer({ ctx }: { ctx: FeatureContext }) {
           <Button size="small" variant="accent" onClick={() => void startHide()}>
             Hide duplicates
           </Button>
-          <Button size="small" keys={['5']} onClick={() => ctx.setFilter('duplicates')}>
+          <Button size="small" keys={['3']} onClick={() => ctx.setFilter('duplicates')}>
             Review
           </Button>
           <Button size="small" onClick={dismiss}>
@@ -168,7 +168,9 @@ function DedupeLayer({ ctx }: { ctx: FeatureContext }) {
           </Button>
         </div>
       )}
-      {panel === 'copies' && ctx.meta && <CopiesPanel meta={ctx.meta} onClose={() => setPanel(null)} />}
+      {panel === 'copies' && ctx.meta && (
+        <CopiesPanel meta={ctx.meta} playlists={ctx.playlists} onClose={() => setPanel(null)} />
+      )}
       {typeof panel === 'object' && panel !== null && (
         <ConfirmHide count={panel.confirm} onConfirm={() => void confirmHide()} onClose={() => setPanel(null)} />
       )}
@@ -178,11 +180,8 @@ function DedupeLayer({ ctx }: { ctx: FeatureContext }) {
 
 export const dedupe: RendererFeature = {
   name: 'dedupe',
-  filters: [{ id: 'duplicates', key: '5', label: 'Duplicates' }],
+  filters: [{ id: 'duplicates', key: '3', label: 'Duplicates' }],
   Layer: DedupeLayer,
   InfoBadge: CopiesBadge,
-  shortcuts: [
-    { keys: ['5'], label: 'Show only duplicates' },
-    { keys: ['D'], label: 'List identical copies' }
-  ]
+  shortcuts: [{ key: 'd', label: 'List identical copies' }]
 }

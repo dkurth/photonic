@@ -20,13 +20,13 @@ type Row = {
   id: number
   rel_path: string
   dir_path: string
-  status: string
+  playlist_id: number | null
   missing: number
   meta_read_at: string | null
 }
 const rows = (db: DB): Row[] =>
   db
-    .prepare('SELECT id, rel_path, dir_path, status, missing, meta_read_at FROM photos ORDER BY rel_path')
+    .prepare('SELECT id, rel_path, dir_path, playlist_id, missing, meta_read_at FROM photos ORDER BY rel_path')
     .all() as Row[]
 const byPath = (db: DB, p: string): Row => rows(db).find((r) => r.rel_path === p)!
 
@@ -35,10 +35,10 @@ describe('scanLibrary', () => {
     const { db, lib } = setup({ 'a.jpg': 'a', 'x/b.jpg': 'b', 'x/y/c.png': 'c', 'skip.mov': 'm' })
     const counts = await scanLibrary(db, lib)
     expect(counts).toMatchObject({ found: 3, added: 3, changed: 0, missing: 0, restored: 0 })
-    expect(rows(db).map((r) => [r.rel_path, r.dir_path, r.status])).toEqual([
-      ['a.jpg', '', 'unreviewed'],
-      ['x/b.jpg', 'x', 'unreviewed'],
-      ['x/y/c.png', 'x/y', 'unreviewed']
+    expect(rows(db).map((r) => [r.rel_path, r.dir_path, r.playlist_id])).toEqual([
+      ['a.jpg', '', null],
+      ['x/b.jpg', 'x', null],
+      ['x/y/c.png', 'x/y', null]
     ])
     expect(db.prepare('SELECT last_scanned_at FROM libraries').pluck().get()).not.toBeNull()
   })
@@ -52,14 +52,14 @@ describe('scanLibrary', () => {
     expect(rows(db)).toEqual(before)
   })
 
-  it('keeps status when a file is edited, and queues it for a metadata re-read', async () => {
+  it('keeps its playlist when a file is edited, and queues it for a metadata re-read', async () => {
     const { db, root, lib } = setup({ 'a.jpg': 'a' })
     await scanLibrary(db, lib)
-    db.prepare("UPDATE photos SET status = 'like', meta_read_at = datetime('now')").run()
+    db.prepare("UPDATE photos SET playlist_id = 1, meta_read_at = datetime('now')").run()
     writeFileSync(join(root, 'a.jpg'), 'edited and longer')
     const counts = await scanLibrary(db, lib)
     expect(counts.changed).toBe(1)
-    expect(byPath(db, 'a.jpg')).toMatchObject({ status: 'like', meta_read_at: null, missing: 0 })
+    expect(byPath(db, 'a.jpg')).toMatchObject({ playlist_id: 1, meta_read_at: null, missing: 0 })
   })
 
   it('detects a change in mtime alone', async () => {
@@ -69,15 +69,15 @@ describe('scanLibrary', () => {
     expect((await scanLibrary(db, lib)).changed).toBe(1)
   })
 
-  it('flags vanished files as missing (keeping their status) and restores them when they return', async () => {
+  it('flags vanished files as missing (keeping their playlist) and restores them when they return', async () => {
     const { db, root, lib } = setup({ 'a.jpg': 'a', 'b.jpg': 'b' })
     await scanLibrary(db, lib)
-    db.prepare("UPDATE photos SET status = 'meh' WHERE rel_path = 'b.jpg'").run()
+    db.prepare("UPDATE photos SET playlist_id = 2 WHERE rel_path = 'b.jpg'").run()
 
     renameSync(join(root, 'b.jpg'), join(root, '..', 'b-away.jpg'))
     let counts = await scanLibrary(db, lib)
     expect(counts.missing).toBe(1)
-    expect(byPath(db, 'b.jpg')).toMatchObject({ missing: 1, status: 'meh' })
+    expect(byPath(db, 'b.jpg')).toMatchObject({ missing: 1, playlist_id: 2 })
 
     // still missing on the next scan: not counted again
     expect((await scanLibrary(db, lib)).missing).toBe(0)
@@ -85,7 +85,7 @@ describe('scanLibrary', () => {
     renameSync(join(root, '..', 'b-away.jpg'), join(root, 'b.jpg'))
     counts = await scanLibrary(db, lib)
     expect(counts.restored).toBe(1)
-    expect(byPath(db, 'b.jpg')).toMatchObject({ missing: 0, status: 'meh' })
+    expect(byPath(db, 'b.jpg')).toMatchObject({ missing: 0, playlist_id: 2 })
   })
 
   it('without a move hook, a renamed file becomes a new row and the old one is missing', async () => {
@@ -151,11 +151,11 @@ describe('move hooks', () => {
     }
   }
 
-  it('re-attaches a moved file to its old row, keeping id and status', async () => {
+  it('re-attaches a moved file to its old row, keeping id and playlist', async () => {
     const { db, root, lib } = setup({ 'old/a.jpg': 'aaa', 'b.jpg': 'b' })
     await scanLibrary(db, lib)
     const before = byPath(db, 'old/a.jpg')
-    db.prepare("UPDATE photos SET status = 'like' WHERE id = ?").run(before.id)
+    db.prepare('UPDATE photos SET playlist_id = 1 WHERE id = ?').run(before.id)
 
     makeTree(root, { 'new/place/a.jpg': 'aaa' })
     rmSync(join(root, 'old'), { recursive: true })
@@ -163,7 +163,7 @@ describe('move hooks', () => {
 
     expect(counts).toMatchObject({ moved: 1, added: 0, missing: 0 })
     const after = byPath(db, 'new/place/a.jpg')
-    expect(after).toMatchObject({ id: before.id, status: 'like', missing: 0, dir_path: 'new/place' })
+    expect(after).toMatchObject({ id: before.id, playlist_id: 1, missing: 0, dir_path: 'new/place' })
     expect(rows(db)).toHaveLength(2)
   })
 
@@ -204,7 +204,7 @@ describe('applyMoves', () => {
     const { db, libId, missingId, addedId } = await twoRows()
     expect(applyMoves(db, libId, [{ missingId: addedId, addedId: missingId }])).toEqual([]) // backwards
     expect(applyMoves(db, libId + 1, [{ missingId, addedId }])).toEqual([]) // other library
-    db.prepare("UPDATE photos SET status = 'like' WHERE id = ?").run(addedId)
+    db.prepare('UPDATE photos SET playlist_id = 1 WHERE id = ?').run(addedId)
     expect(applyMoves(db, libId, [{ missingId, addedId }])).toEqual([]) // added row already reviewed
     expect(rows(db)).toHaveLength(2)
   })
