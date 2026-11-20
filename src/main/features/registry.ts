@@ -31,6 +31,10 @@ export class FeatureRegistry {
     return this.features.flatMap((f) => (f.scanHooks ? [f.scanHooks] : []))
   }
 
+  hideReasons(): string[] {
+    return this.features.flatMap((f) => f.hideReasons ?? [])
+  }
+
   filters(): Record<string, FilterImpl> {
     return Object.assign({}, ...this.features.map((f) => f.filters ?? {}))
   }

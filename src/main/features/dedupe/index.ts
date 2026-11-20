@@ -6,6 +6,7 @@ import {
   copiesOf,
   duplicateSummary,
   duplicatesFilter,
+  HIDE_REASON,
   hideDuplicates,
   matchMoves,
   planHide,
@@ -33,6 +34,7 @@ export function createDedupeFeature(deps: { hash: Hasher; close?: () => Promise<
         }
       }
     },
+    hideReasons: [HIDE_REASON],
     filters: { duplicates: duplicatesFilter },
     registerIpc(ipc, { db }) {
       ipc('duplicates:summary', (libraryId) => duplicateSummary(db, id(libraryId)))

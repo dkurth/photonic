@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import type { DuplicateSummary } from '@shared/types'
 import type { DB } from '../../db'
-import { newBatchId, setStatus } from '../../marks'
+import { newBatchId, setHidden } from '../../marks'
 import type { FilterImpl } from '../../ordering'
 import type { LibraryRow, MovePair, ScanPhoto } from '../../scanner/types'
 import type { Hasher } from './hash'
@@ -108,6 +108,9 @@ export async function matchMoves(
   return pairs
 }
 
+/** The hide reason this feature uses (photos.hidden_reason). */
+export const HIDE_REASON = 'duplicate'
+
 /** SQL for the content hashes that appear more than once among a library's present photos. */
 const DUP_HASHES = `SELECT h.content_hash FROM photo_hashes h JOIN photos p ON p.id = h.photo_id
   WHERE p.library_id = ? AND p.missing = 0 AND ${FRESH}
@@ -127,7 +130,18 @@ export function duplicateSummary(db: DB, libraryId: number): DuplicateSummary {
     .pluck()
     .get(libraryId) as number
   const pending = countNeedingHash(db, libraryId)
-  return { ...g, hashingDone: pending === 0, hashed: total - pending, total }
+  const hidden = db
+    .prepare('SELECT count(*) FROM photos WHERE library_id = ? AND missing = 0 AND hidden = 1 AND hidden_reason = ?')
+    .pluck()
+    .get(libraryId, HIDE_REASON) as number
+  return {
+    ...g,
+    hideable: planHide(db, libraryId).length,
+    hidden,
+    hashingDone: pending === 0,
+    hashed: total - pending,
+    total
+  }
 }
 
 /** Other present photos in the same library with identical content. */
@@ -153,51 +167,55 @@ export function compareKeeper(a: string, b: string): number {
 }
 
 /**
- * Photos that "Hide duplicates" would mark Meh (PLAN.md §8). Explicit marks are never changed:
- * - a group with a Liked copy keeps it, and its unreviewed copies become Meh;
- * - otherwise one unreviewed copy stays (see compareKeeper) and the other unreviewed copies become Meh;
- * - a group whose copies are all Meh already is left alone.
+ * Copies that "Hide duplicates" would hide (PLAN.md §8). Hiding never changes a photo's Like/Meh
+ * status, and copies you've marked are never hidden:
+ * - a group with a marked copy (Like or Meh) keeps its marked copies, and its unreviewed ones are hidden;
+ * - otherwise one unreviewed copy stays (see compareKeeper) and the other copies are hidden;
+ * - copies already hidden are left as they are.
  */
 export function planHide(db: DB, libraryId: number): number[] {
   const rows = db
     .prepare(
       `SELECT h.content_hash AS hash, p.id, p.rel_path, p.status FROM photo_hashes h JOIN photos p ON p.id = h.photo_id
-       WHERE p.library_id = ? AND p.missing = 0 AND ${FRESH} AND h.content_hash IN (${DUP_HASHES})`
+       WHERE p.library_id = ? AND p.missing = 0 AND p.hidden = 0 AND ${FRESH} AND h.content_hash IN (${DUP_HASHES})`
     )
     .all(libraryId, libraryId) as { hash: string; id: number; rel_path: string; status: string }[]
 
   const groups = new Map<string, typeof rows>()
   for (const r of rows) groups.set(r.hash, [...(groups.get(r.hash) ?? []), r])
 
-  const toMark: number[] = []
+  const toHide: number[] = []
   for (const g of groups.values()) {
+    if (g.length < 2) continue // the other copies are already hidden
     const unreviewed = g.filter((r) => r.status === 'unreviewed')
     if (!unreviewed.length) continue
-    if (g.some((r) => r.status === 'like')) {
-      toMark.push(...unreviewed.map((r) => r.id))
+    if (unreviewed.length < g.length) {
+      toHide.push(...unreviewed.map((r) => r.id)) // a marked copy stays visible
     } else {
       const [, ...rest] = [...unreviewed].sort((a, b) => compareKeeper(a.rel_path, b.rel_path))
-      toMark.push(...rest.map((r) => r.id))
+      toHide.push(...rest.map((r) => r.id))
     }
   }
-  return toMark
+  return toHide
 }
 
-/** Marks the extra copies Meh as one batch, so a single Cmd+Z undoes it all. */
-export function hideDuplicates(db: DB, libraryId: number): { marked: number; batchId: number | null } {
+/** Hides the extra copies as one batch, so a single Cmd+Z brings them all back. */
+export function hideDuplicates(db: DB, libraryId: number): { hidden: number; batchId: number | null } {
   return db.transaction(() => {
     const ids = planHide(db, libraryId)
-    if (!ids.length) return { marked: 0, batchId: null }
+    if (!ids.length) return { hidden: 0, batchId: null }
     const batchId = newBatchId(db)
-    for (const id of ids) setStatus(db, id, 'meh', { source: 'dedupe', batchId })
-    return { marked: ids.length, batchId }
+    for (const id of ids) setHidden(db, id, true, HIDE_REASON, { source: 'dedupe', batchId })
+    return { hidden: ids.length, batchId }
   })()
 }
 
-/** The "duplicates" view filter: only photos with copies, each group kept together. */
+/** The "duplicates" view filter: only photos with copies (hidden ones included), each group kept together. */
 export const duplicatesFilter: FilterImpl = (libraryId) => ({
   where: `p.id IN (SELECT h.photo_id FROM photo_hashes h WHERE h.content_hash IN (${DUP_HASHES})
             AND h.size_bytes = p.size_bytes AND h.mtime_ms = p.mtime_ms)`,
   params: [libraryId],
-  groupBy: '(SELECT content_hash FROM photo_hashes WHERE photo_id = p.id)'
+  groupBy: '(SELECT content_hash FROM photo_hashes WHERE photo_id = p.id)',
+  // Review what's hidden too: this is the one view that shows hidden copies.
+  includeHidden: true
 })

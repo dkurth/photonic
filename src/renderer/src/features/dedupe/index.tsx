@@ -12,6 +12,7 @@ const dismissedKey = (libraryId: number): string => `dedupe.dismissed.${libraryI
 /** "1 of 3 copies" next to the date. */
 function CopiesBadge({ ctx }: { ctx: FeatureContext }) {
   const [copies, setCopies] = useState(0)
+  const hidden = ctx.meta?.hidden && ctx.meta.hiddenReason === 'duplicate'
   const id = ctx.meta?.id
   useEffect(() => {
     if (id === undefined) return setCopies(0)
@@ -24,7 +25,7 @@ function CopiesBadge({ ctx }: { ctx: FeatureContext }) {
   if (!copies) return null
   return (
     <span className="copies-badge" data-testid="copies-badge" title="Identical copies (D to list them)">
-      1 of {copies + 1} copies
+      {hidden ? 'Hidden copy · ' : ''}1 of {copies + 1} copies
     </span>
   )
 }
@@ -42,12 +43,13 @@ function CopiesPanel({ meta, onClose }: { meta: PhotoMeta; onClose: () => void }
           <div className="copy-row current">
             <StatusTag status={meta.status} />
             <span className="mono">{meta.absPath}</span>
-            <span className="note">this one</span>
+            <span className="note">this one{meta.hidden ? ' · hidden' : ''}</span>
           </div>
           {copies?.map((c) => (
             <div key={c.id} className="copy-row">
               <StatusTag status={c.status} />
               <span className="mono">{c.absPath}</span>
+              <span className="note">{c.hidden ? 'hidden' : ''}</span>
             </div>
           ))}
           {copies?.length === 0 && <div className="note">No identical copies.</div>}
@@ -68,16 +70,17 @@ function ConfirmHide({ count, onConfirm, onClose }: { count: number; onConfirm: 
       <div className="modal" role="dialog" aria-label="Hide duplicates" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-title pixel">HIDE DUPLICATES</div>
         <p>
-          Mark <strong>{fmtNumber(count)}</strong> extra {count === 1 ? 'copy' : 'copies'} as Meh? One copy of each
-          photo stays, and photos you already marked are not changed. No files are touched, and{' '}
-          <kbd className="keycap">⌘Z</kbd> undoes it all.
+          Hide <strong>{fmtNumber(count)}</strong> extra {count === 1 ? 'copy' : 'copies'} so each photo only comes up
+          once when reviewing? Hidden copies keep their marks (they are <em>not</em> marked Meh), copies you've already
+          marked stay visible, and no files are touched. They're still listed under Duplicates, and{' '}
+          <kbd className="keycap">⌘Z</kbd> brings them all back.
         </p>
         <div className="modal-actions">
           <Button size="small" keys={['Esc']} onClick={onClose}>
             Cancel
           </Button>
-          <Button size="small" variant="meh" keys={['↵']} onClick={onConfirm}>
-            Mark as Meh
+          <Button size="small" variant="accent" keys={['↵']} onClick={onConfirm}>
+            Hide copies
           </Button>
         </div>
       </div>
@@ -121,13 +124,13 @@ function DedupeLayer({ ctx }: { ctx: FeatureContext }) {
     const r = await api.duplicates.hide(libraryId)
     await ctx.reload()
     refresh()
-    ctx.toast(`Marked ${fmtNumber(r.marked)} copies as Meh — ⌘Z to undo`)
+    ctx.toast(`Hid ${fmtNumber(r.hidden)} duplicate ${r.hidden === 1 ? 'copy' : 'copies'} — ⌘Z to undo`)
   }, [api, ctx, libraryId, refresh])
 
   const dismiss = useCallback(() => {
     if (!summary) return
-    setDismissed(summary.extraCopies)
-    void api.settings.set(dismissedKey(libraryId), summary.extraCopies)
+    setDismissed(summary.hideable)
+    void api.settings.set(dismissedKey(libraryId), summary.hideable)
   }, [api, libraryId, summary])
 
   // Menu: Library → Hide Duplicates…
@@ -145,20 +148,16 @@ function DedupeLayer({ ctx }: { ctx: FeatureContext }) {
   )
 
   const showBanner =
-    summary?.hashingDone &&
-    summary.extraCopies > 0 &&
-    dismissed !== summary.extraCopies &&
-    ctx.view.filter !== 'duplicates'
+    summary?.hashingDone && summary.hideable > 0 && dismissed !== summary.hideable && ctx.view.filter !== 'duplicates'
 
   return (
     <>
       {showBanner && (
         <div className="banner" role="status" data-testid="dup-banner">
           <span>
-            <strong>{fmtNumber(summary.extraCopies)}</strong> duplicate {summary.extraCopies === 1 ? 'copy' : 'copies'}{' '}
-            found.
+            <strong>{fmtNumber(summary.hideable)}</strong> duplicate {summary.hideable === 1 ? 'copy' : 'copies'} found.
           </span>
-          <Button size="small" variant="meh" onClick={() => void startHide()}>
+          <Button size="small" variant="accent" onClick={() => void startHide()}>
             Hide duplicates
           </Button>
           <Button size="small" keys={['5']} onClick={() => ctx.setFilter('duplicates')}>

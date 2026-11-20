@@ -1,13 +1,25 @@
 import type { PhotoList, Scope, SortOrder, Status, StatusCounts, ViewSpec } from '@shared/types'
 import type { DB } from './db'
+import { visibleSql } from './marks'
 import { displayDate } from './photos'
 
 /**
  * Extra filters registered by optional features: an SQL condition on `photos p` plus its params.
  * `groupBy` (an SQL expression) keeps photos with the same value next to each other — each group
- * appears where its first photo falls in the chosen sort order.
+ * appears where its first photo falls in the chosen sort order. `includeHidden` shows photos that
+ * are hidden from review (e.g. the Duplicates view shows the hidden copies too).
  */
-export type FilterImpl = (libraryId: number) => { where: string; params: unknown[]; groupBy?: string }
+export type FilterImpl = (libraryId: number) => {
+  where: string
+  params: unknown[]
+  groupBy?: string
+  includeHidden?: boolean
+}
+
+/** Which features' hidden photos to leave out (PLAN.md §8): their hide reasons, e.g. ['duplicate']. */
+export interface Visibility {
+  hideReasons?: readonly string[]
+}
 
 const CORE_FILTERS: Record<string, string> = {
   all: '1 = 1',
@@ -69,13 +81,23 @@ function scopeSql(scope: Scope): { where: string; params: unknown[] } {
  * The ordered photo IDs for a view (PLAN.md §7). This is the one place that decides which
  * photos are in a view. Missing photos are never included.
  */
-export function listIds(db: DB, view: ViewSpec, extraFilters: Record<string, FilterImpl> = {}): number[] {
-  return listPhotos(db, view, extraFilters).ids
+export function listIds(
+  db: DB,
+  view: ViewSpec,
+  extraFilters: Record<string, FilterImpl> = {},
+  vis: Visibility = {}
+): number[] {
+  return listPhotos(db, view, extraFilters, vis).ids
 }
 
 /** listIds plus each photo's status, in the same order. */
-export function listPhotos(db: DB, view: ViewSpec, extraFilters: Record<string, FilterImpl> = {}): PhotoList {
-  let filter: { where: string; params: unknown[]; groupBy?: string }
+export function listPhotos(
+  db: DB,
+  view: ViewSpec,
+  extraFilters: Record<string, FilterImpl> = {},
+  vis: Visibility = {}
+): PhotoList {
+  let filter: ReturnType<FilterImpl>
   if (view.filter in CORE_FILTERS) filter = { where: CORE_FILTERS[view.filter], params: [] }
   else if (extraFilters[view.filter]) filter = extraFilters[view.filter](view.libraryId)
   else throw new Error(`Unknown filter: ${view.filter}`)
@@ -84,7 +106,8 @@ export function listPhotos(db: DB, view: ViewSpec, extraFilters: Record<string, 
   const rows = db
     .prepare(
       `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms, p.status, ${filter.groupBy ?? 'NULL'} AS grp FROM photos p
-       WHERE p.library_id = ? AND p.missing = 0 AND ${scope.where} AND ${filter.where}`
+       WHERE p.library_id = ? AND p.missing = 0 AND ${scope.where} AND ${filter.where}
+         AND ${filter.includeHidden ? '1 = 1' : visibleSql('p', vis.hideReasons ?? [])}`
     )
     .all(view.libraryId, ...scope.params, ...filter.params) as {
     id: number
@@ -113,7 +136,7 @@ function clusterGroups<T extends { grp: unknown }>(rows: T[]): T[] {
 }
 
 /** Status counts for a library, or one folder of it (missing photos excluded). */
-export function statusCounts(db: DB, libraryId: number, scope: Scope): StatusCounts {
+export function statusCounts(db: DB, libraryId: number, scope: Scope, vis: Visibility = {}): StatusCounts {
   const s = scopeSql(scope)
   return db
     .prepare(
@@ -121,7 +144,8 @@ export function statusCounts(db: DB, libraryId: number, scope: Scope): StatusCou
          count(*) FILTER (WHERE p.status = 'unreviewed') AS unreviewed,
          count(*) FILTER (WHERE p.status = 'like') AS "like",
          count(*) FILTER (WHERE p.status = 'meh') AS meh
-       FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${s.where}`
+       FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${s.where}
+         AND ${visibleSql('p', vis.hideReasons ?? [])}`
     )
     .get(libraryId, ...s.params) as StatusCounts
 }

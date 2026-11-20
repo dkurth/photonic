@@ -152,7 +152,7 @@ try {
     await step('→ moves to the next photo; dates come from EXIF', async () => {
       await win.keyboard.press('ArrowRight')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '2 / 5')
-      assert.match(await text(win, 'path'), /My Photos\/top\.jpg$/)
+      await waitPath(win, 'My Photos/top.jpg')
       await imageLoaded(win)
       assert.equal(await text(win, 'date'), 'Taken 2019-07-04 14:32')
       await win.keyboard.press('ArrowRight')
@@ -326,6 +326,8 @@ try {
       await win.keyboard.press('1') // number keys work inside the menu too
       await list.waitFor({ state: 'detached' })
       assert.equal(await current(), 'all')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
+      await win.keyboard.press('Home')
       await win.keyboard.press('ArrowRight') // and the viewer's keys are back
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.startsWith('2 /'))
     })
@@ -602,16 +604,36 @@ try {
       await win.keyboard.press('2')
     })
 
-    await step('dedupe: Hide duplicates (confirm) marks the extra copies Meh; one ⌘Z undoes it all', async () => {
+    await step('dedupe: Hide duplicates hides the extra copies from review — without marking them Meh', async () => {
       await win.getByRole('button', { name: 'Hide duplicates' }).click()
       await win.getByRole('dialog', { name: 'Hide duplicates' }).waitFor()
       await shot(win, 'm5-confirm')
       await win.keyboard.press('Enter')
-      await win.waitForSelector('text=Marked 3 copies as Meh')
-      assert.deepEqual(await dupStats(win), { total: 6, unreviewed: 3, like: 0, meh: 3 })
+      await win.waitForSelector('text=Hid 3 duplicate copies')
+      // each photo now comes up once: 3 left to review, and nothing was marked Meh
+      assert.deepEqual(await dupStats(win), { total: 3, unreviewed: 3, like: 0, meh: 0 })
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 3'))
+      await win.getByTestId('dup-banner').waitFor({ state: 'detached' })
+    })
+
+    await step('dedupe: the Duplicates view still shows hidden copies, labelled', async () => {
+      await win.keyboard.press('5')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
+      await win.keyboard.press('ArrowRight') // copies/a.jpg: a hidden copy
+      await waitPath(win, 'copies/a.jpg')
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=copies-badge]')?.textContent.startsWith('Hidden copy')
+      )
+      assert.equal(await tagStatus(win), 'unreviewed')
+      await shot(win, 'm5-hidden-copy')
+      await win.keyboard.press('2')
+    })
+
+    await step('dedupe: one ⌘Z brings all the hidden copies back', async () => {
       await win.keyboard.press('Meta+z')
       await win.waitForSelector('text=Undid 3 changes')
       assert.deepEqual(await dupStats(win), { total: 6, unreviewed: 6, like: 0, meh: 0 })
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 6'))
     })
 
     await step('dedupe: a renamed file keeps its mark after a rescan', async () => {

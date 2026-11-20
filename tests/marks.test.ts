@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { migrate, openDatabase, type DB } from '../src/main/db'
 import { coreMigrations } from '../src/main/db/migrations'
-import { isStatus, newBatchId, setStatus, undoLast } from '../src/main/marks'
+import { isStatus, newBatchId, setHidden, setStatus, undoLast, visibleSql } from '../src/main/marks'
 import { listPhotos, statusCounts } from '../src/main/ordering'
 
 function setup(n = 4): { db: DB; lib: number; ids: number[] } {
@@ -27,9 +27,10 @@ describe('setStatus', () => {
     expect(setStatus(db, ids[0], 'like')).toBe(true)
     expect(status(db, ids[0])).toBe('like')
     expect(db.prepare('SELECT status_at FROM photos WHERE id = ?').pluck().get(ids[0])).not.toBeNull()
-    expect(db.prepare('SELECT old_status, new_status, source, batch_id, undone FROM mark_events').get()).toEqual({
-      old_status: 'unreviewed',
-      new_status: 'like',
+    expect(db.prepare('SELECT field, old_value, new_value, source, batch_id, undone FROM mark_events').get()).toEqual({
+      field: 'status',
+      old_value: 'unreviewed',
+      new_value: 'like',
       source: 'user',
       batch_id: null,
       undone: 0
@@ -61,10 +62,10 @@ describe('undoLast', () => {
     setStatus(db, ids[1], 'meh')
     setStatus(db, ids[0], 'meh') // changed my mind
 
-    expect(undoLast(db, lib)).toEqual({ changes: [{ photoId: ids[0], status: 'like' }] })
+    expect(undoLast(db, lib)).toEqual({ changes: [{ photoId: ids[0], field: 'status', status: 'like' }] })
     expect(status(db, ids[0])).toBe('like')
-    expect(undoLast(db, lib)).toEqual({ changes: [{ photoId: ids[1], status: 'unreviewed' }] })
-    expect(undoLast(db, lib)).toEqual({ changes: [{ photoId: ids[0], status: 'unreviewed' }] })
+    expect(undoLast(db, lib)).toEqual({ changes: [{ photoId: ids[1], field: 'status', status: 'unreviewed' }] })
+    expect(undoLast(db, lib)).toEqual({ changes: [{ photoId: ids[0], field: 'status', status: 'unreviewed' }] })
     expect(undoLast(db, lib)).toBeNull()
     expect(ids.map((i) => status(db, i))).toEqual(['unreviewed', 'unreviewed', 'unreviewed', 'unreviewed'])
     expect(events(db)).toBe(3) // history is kept, just flagged
@@ -80,7 +81,7 @@ describe('undoLast', () => {
     const r = undoLast(db, lib)!
     expect(r.changes.map((c) => c.photoId).sort()).toEqual(ids.slice(0, 3).sort())
     expect(ids.map((i) => status(db, i))).toEqual(['unreviewed', 'unreviewed', 'unreviewed', 'like'])
-    expect(undoLast(db, lib)!.changes).toEqual([{ photoId: ids[3], status: 'unreviewed' }])
+    expect(undoLast(db, lib)!.changes).toEqual([{ photoId: ids[3], field: 'status', status: 'unreviewed' }])
   })
 
   it('only touches the given library', () => {
@@ -106,6 +107,36 @@ describe('undoLast', () => {
     const b1 = newBatchId(db)
     setStatus(db, ids[0], 'meh', { batchId: b1 })
     expect(newBatchId(db)).toBe(b1 + 1)
+  })
+})
+
+describe('setHidden', () => {
+  it('hides without changing the status, logs it, and undo restores it (including the reason)', () => {
+    const { db, lib, ids } = setup(2)
+    setStatus(db, ids[0], 'like')
+    expect(setHidden(db, ids[0], true, 'duplicate')).toBe(true)
+    expect(db.prepare('SELECT status, hidden, hidden_reason FROM photos WHERE id = ?').get(ids[0])).toEqual({
+      status: 'like',
+      hidden: 1,
+      hidden_reason: 'duplicate'
+    })
+    setHidden(db, ids[0], true, 'duplicate') // no-op, not logged
+    setHidden(db, ids[0], false, null)
+    expect(undoLast(db, lib)!.changes).toEqual([{ photoId: ids[0], field: 'hidden', hidden: true }])
+    expect(db.prepare('SELECT hidden_reason FROM photos WHERE id = ?').pluck().get(ids[0])).toBe('duplicate')
+    expect(undoLast(db, lib)!.changes).toEqual([{ photoId: ids[0], field: 'hidden', hidden: false }])
+    expect(status(db, ids[0])).toBe('like')
+  })
+
+  it('hidden photos are left out of lists and counts only while their reason is active', () => {
+    const { db, lib, ids } = setup(3)
+    setHidden(db, ids[1], true, 'duplicate')
+    const view = { libraryId: lib, scope: { kind: 'library' as const }, filter: 'all', sort: 'filename' as const }
+    expect(listPhotos(db, view, {}, { hideReasons: ['duplicate'] }).ids).toEqual([ids[0], ids[2]])
+    expect(statusCounts(db, lib, { kind: 'library' }, { hideReasons: ['duplicate'] }).total).toBe(2)
+    expect(listPhotos(db, view, {}, { hideReasons: [] }).ids).toEqual(ids) // feature off: back in view
+    expect(visibleSql('p', [])).toBe('1 = 1')
+    expect(visibleSql('p', ["o'brien"])).toContain("'o''brien'")
   })
 })
 

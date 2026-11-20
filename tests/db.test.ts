@@ -36,9 +36,9 @@ describe('openDatabase', () => {
 describe('migrate', () => {
   it('applies core migrations once and is idempotent', () => {
     const db = openDatabase(':memory:')
-    expect(migrate(db, coreMigrations)).toEqual([1, 2])
+    expect(migrate(db, coreMigrations)).toEqual([1, 2, 3])
     expect(migrate(db, coreMigrations)).toEqual([])
-    expect(schemaVersion(db)).toBe(2)
+    expect(schemaVersion(db)).toBe(3)
 
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").pluck().all()
     expect(tables).toEqual(['libraries', 'mark_events', 'photos', 'schema_migrations', 'settings'])
@@ -51,10 +51,21 @@ describe('migrate', () => {
       coreMigrations.filter((m) => m.version === 1)
     )
     db.prepare("INSERT INTO libraries (root_path, name) VALUES ('/p', 'p')").run()
-    expect(migrate(db, coreMigrations)).toEqual([2])
+    db.prepare(
+      "INSERT INTO photos (library_id, rel_path, dir_path, size_bytes, mtime_ms, status) VALUES (1, 'a.jpg', '', 1, 1, 'like')"
+    ).run()
+    db.prepare("INSERT INTO mark_events (photo_id, old_status, new_status) VALUES (1, 'unreviewed', 'like')").run()
+    expect(migrate(db, coreMigrations)).toEqual([2, 3])
     expect(db.prepare('SELECT count(*) FROM libraries').pluck().get()).toBe(1)
-    const cols = db.prepare('PRAGMA table_info(mark_events)').all() as { name: string }[]
-    expect(cols.map((c) => c.name)).toContain('undone')
+    const cols = (db.prepare('PRAGMA table_info(mark_events)').all() as { name: string }[]).map((c) => c.name)
+    expect(cols).toEqual(expect.arrayContaining(['undone', 'field', 'old_value', 'new_value']))
+    // existing history carries over as status changes
+    expect(db.prepare('SELECT field, old_value, new_value FROM mark_events').get()).toEqual({
+      field: 'status',
+      old_value: 'unreviewed',
+      new_value: 'like'
+    })
+    expect(db.prepare('SELECT hidden, hidden_reason FROM photos').get()).toEqual({ hidden: 0, hidden_reason: null })
   })
 
   it('applies migrations in version order regardless of array order', () => {
@@ -116,9 +127,7 @@ describe('core schema', () => {
   it('cascades library deletion to photos and mark events', () => {
     const db = freshDb()
     const { libraryId, photoId } = addLibraryAndPhoto(db)
-    db.prepare("INSERT INTO mark_events (photo_id, old_status, new_status) VALUES (?, 'unreviewed', 'like')").run(
-      photoId
-    )
+    db.prepare("INSERT INTO mark_events (photo_id, old_value, new_value) VALUES (?, 'unreviewed', 'like')").run(photoId)
     db.prepare('DELETE FROM libraries WHERE id = ?').run(libraryId)
     expect(db.prepare('SELECT count(*) FROM photos').pluck().get()).toBe(0)
     expect(db.prepare('SELECT count(*) FROM mark_events').pluck().get()).toBe(0)

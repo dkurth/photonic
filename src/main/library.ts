@@ -2,7 +2,8 @@ import { realpathSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { FolderInfo, Library, LibraryStats } from '@shared/types'
 import type { DB } from './db'
-import { comparePaths } from './ordering'
+import { visibleSql } from './marks'
+import { comparePaths, type Visibility } from './ordering'
 import type { LibraryRow } from './scanner/types'
 
 export function toLibrary(r: LibraryRow): Library {
@@ -29,33 +30,35 @@ export function listLibraries(db: DB): Library[] {
   return (db.prepare('SELECT * FROM libraries ORDER BY name COLLATE NOCASE').all() as LibraryRow[]).map(toLibrary)
 }
 
-export function libraryStats(db: DB, id: number): LibraryStats {
-  const r = db
+export function libraryStats(db: DB, id: number, vis: Visibility = {}): LibraryStats {
+  const shown = `missing = 0 AND ${visibleSql('photos', vis.hideReasons ?? [])}`
+  return db
     .prepare(
       `SELECT
-         count(*) FILTER (WHERE missing = 0)                              AS total,
-         count(*) FILTER (WHERE missing = 1)                              AS missing,
-         count(*) FILTER (WHERE missing = 0 AND status = 'unreviewed')    AS unreviewed,
-         count(*) FILTER (WHERE missing = 0 AND status = 'like')          AS "like",
-         count(*) FILTER (WHERE missing = 0 AND status = 'meh')           AS meh,
-         count(*) FILTER (WHERE missing = 0 AND meta_read_at IS NOT NULL) AS metaRead,
-         count(*) FILTER (WHERE missing = 0 AND taken_at IS NOT NULL)     AS withTakenAt,
-         count(DISTINCT dir_path) FILTER (WHERE missing = 0)              AS folders
+         count(*) FILTER (WHERE ${shown})                              AS total,
+         count(*) FILTER (WHERE missing = 0 AND NOT (${shown}))        AS hidden,
+         count(*) FILTER (WHERE missing = 1)                           AS missing,
+         count(*) FILTER (WHERE ${shown} AND status = 'unreviewed')    AS unreviewed,
+         count(*) FILTER (WHERE ${shown} AND status = 'like')          AS "like",
+         count(*) FILTER (WHERE ${shown} AND status = 'meh')           AS meh,
+         count(*) FILTER (WHERE ${shown} AND meta_read_at IS NOT NULL) AS metaRead,
+         count(*) FILTER (WHERE ${shown} AND taken_at IS NOT NULL)     AS withTakenAt,
+         count(DISTINCT dir_path) FILTER (WHERE ${shown})              AS folders
        FROM photos WHERE library_id = ?`
     )
     .get(id) as LibraryStats
-  return r
 }
 
 /**
  * Folders with photo counts that include their subfolders (PLAN.md §7, the `G` folder picker).
  * Intermediate folders that only contain subfolders are included too. The root ('') is not.
  */
-export function listFolders(db: DB, libraryId: number): FolderInfo[] {
+export function listFolders(db: DB, libraryId: number, vis: Visibility = {}): FolderInfo[] {
   const rows = db
     .prepare(
       `SELECT dir_path, count(*) AS total, count(*) FILTER (WHERE status = 'unreviewed') AS unreviewed
-       FROM photos WHERE library_id = ? AND missing = 0 GROUP BY dir_path`
+       FROM photos WHERE library_id = ? AND missing = 0 AND ${visibleSql('photos', vis.hideReasons ?? [])}
+       GROUP BY dir_path`
     )
     .all(libraryId) as { dir_path: string; total: number; unreviewed: number }[]
 

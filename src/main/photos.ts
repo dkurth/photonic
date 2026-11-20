@@ -19,6 +19,8 @@ export interface PhotoRow {
   lens_model: string | null
   status: Status
   missing: number
+  hidden: number
+  hidden_reason: string | null
   root_path: string
 }
 
@@ -71,7 +73,9 @@ export function toPhotoMeta(r: PhotoRow): PhotoMeta {
     cameraMake: r.camera_make,
     cameraModel: r.camera_model,
     lensModel: r.lens_model,
-    missing: r.missing === 1
+    missing: r.missing === 1,
+    hidden: r.hidden === 1,
+    hiddenReason: r.hidden_reason
   }
 }
 

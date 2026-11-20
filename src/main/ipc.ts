@@ -63,6 +63,7 @@ export function registerCoreIpc(ctx: {
   extract: Extractor
 }): void {
   const { db, scans } = ctx
+  const vis = { hideReasons: ctx.features.hideReasons() }
 
   /** Opens a library: remembers it and starts a scan in the background. */
   function open(libraryId: number): Library {
@@ -117,15 +118,15 @@ export function registerCoreIpc(ctx: {
     await scans.scan(id(libraryId))
   })
 
-  handle('libraries:stats', (libraryId) => libraryStats(db, id(libraryId)))
+  handle('libraries:stats', (libraryId) => libraryStats(db, id(libraryId), vis))
 
-  handle('libraries:folders', (libraryId) => listFolders(db, id(libraryId)))
+  handle('libraries:folders', (libraryId) => listFolders(db, id(libraryId), vis))
 
-  handle('photos:listIds', (view) => listIds(db, viewSpec(view), ctx.features.filters()))
+  handle('photos:listIds', (view) => listIds(db, viewSpec(view), ctx.features.filters(), vis))
 
-  handle('photos:list', (view) => listPhotos(db, viewSpec(view), ctx.features.filters()))
+  handle('photos:list', (view) => listPhotos(db, viewSpec(view), ctx.features.filters(), vis))
 
-  handle('photos:counts', (libraryId, sc) => statusCounts(db, id(libraryId), scope(sc)))
+  handle('photos:counts', (libraryId, sc) => statusCounts(db, id(libraryId), scope(sc), vis))
 
   handle('marks:set', (photoId, status) => {
     if (!isStatus(status)) throw new Error('Invalid status')

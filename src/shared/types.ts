@@ -18,8 +18,10 @@ export interface Library {
 }
 
 export interface LibraryStats {
-  /** Photos present on disk (missing ones excluded from every other count too). */
+  /** Photos present on disk and not hidden (missing and hidden ones are excluded from the other counts too). */
   total: number
+  /** Present but hidden from review (e.g. duplicate copies). */
+  hidden: number
   missing: number
   unreviewed: number
   like: number
@@ -40,8 +42,12 @@ export interface FolderInfo {
 }
 
 export interface DuplicateSummary {
-  /** Copies beyond the first in each group: the number "hide duplicates" could mark at most. */
+  /** Copies beyond the first in each group (hidden or not). */
   extraCopies: number
+  /** How many copies "Hide duplicates" would hide right now. */
+  hideable: number
+  /** Copies already hidden as duplicates. */
+  hidden: number
   /** Photos that have at least one identical copy. */
   groups: number
   /** False while some photos still need hashing (the counts aren't final yet). */
@@ -97,9 +103,12 @@ export interface PhotoList {
   statuses: Status[]
 }
 
+export type UndoChange =
+  { photoId: number; field: 'status'; status: Status } | { photoId: number; field: 'hidden'; hidden: boolean }
+
 export interface UndoResult {
-  /** Photos whose status was restored, most recent change first. */
-  changes: { photoId: number; status: Status }[]
+  /** What was restored, most recent change first. */
+  changes: UndoChange[]
 }
 
 export type SortOrder = 'filename' | 'date' | 'random'
@@ -138,6 +147,9 @@ export interface PhotoMeta {
   cameraModel: string | null
   lensModel: string | null
   missing: boolean
+  /** Hidden from review (e.g. an identical copy); its status is unaffected. */
+  hidden: boolean
+  hiddenReason: string | null
 }
 
 /** The API exposed to the renderer as `window.photonic` (see src/preload). Grows milestone by milestone. */
@@ -194,9 +206,10 @@ export interface PhotonicAPI {
   duplicates: {
     summary(libraryId: number): Promise<DuplicateSummary>
     copies(photoId: number): Promise<PhotoMeta[]>
-    /** How many photos `hide` would mark, without changing anything. */
+    /** How many copies `hide` would hide, without changing anything. */
     previewHide(libraryId: number): Promise<number>
-    hide(libraryId: number): Promise<{ marked: number; batchId: number | null }>
+    /** Hides the extra copies from review (their Like/Meh status is not touched). */
+    hide(libraryId: number): Promise<{ hidden: number; batchId: number | null }>
   }
   /** Commands from the app menu (e.g. 'open-folder', 'rescan'). */
   onMenu(cb: (command: string) => void): Unsubscribe

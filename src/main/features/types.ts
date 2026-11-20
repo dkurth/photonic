@@ -16,6 +16,11 @@ export interface Feature {
   migrations?: Migration[]
   registerIpc?(ipc: IpcRegistrar, ctx: { db: DB }): void
   scanHooks?: ScanHooks
+  /**
+   * Reasons this feature hides photos from review with (photos.hidden_reason), e.g. ['duplicate'].
+   * Photos hidden for a reason are only left out while the feature that owns it is on.
+   */
+  hideReasons?: string[]
   /** Extra view filters, e.g. { duplicates: ... }. */
   filters?: Record<string, FilterImpl>
   /** Release resources (e.g. worker threads) on quit. */

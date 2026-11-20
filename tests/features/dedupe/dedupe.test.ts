@@ -16,9 +16,9 @@ import {
 } from '../../../src/main/features/dedupe/dedupe'
 import { hashFile, type Hasher } from '../../../src/main/features/dedupe/hash'
 import { FeatureRegistry } from '../../../src/main/features/registry'
-import { addLibrary } from '../../../src/main/library'
+import { addLibrary, libraryStats, listFolders } from '../../../src/main/library'
 import { undoLast } from '../../../src/main/marks'
-import { listIds } from '../../../src/main/ordering'
+import { listIds, statusCounts } from '../../../src/main/ordering'
 import { scanLibrary } from '../../../src/main/scanner/scan'
 import type { LibraryRow } from '../../../src/main/scanner/types'
 import { makeTree, tempDir } from '../../helpers'
@@ -181,9 +181,19 @@ describe('duplicates', () => {
     'unique.jpg': 'unique'
   }
 
-  it('summarizes groups and extra copies', async () => {
+  it('summarizes groups, extra copies, and how many can be hidden', async () => {
     const { db, lib } = await setup(files)
-    expect(duplicateSummary(db, lib.id)).toEqual({ groups: 2, extraCopies: 3, hashingDone: true, hashed: 6, total: 6 })
+    expect(duplicateSummary(db, lib.id)).toEqual({
+      groups: 2,
+      extraCopies: 3,
+      hideable: 3,
+      hidden: 0,
+      hashingDone: true,
+      hashed: 6,
+      total: 6
+    })
+    hideDuplicates(db, lib.id)
+    expect(duplicateSummary(db, lib.id)).toMatchObject({ extraCopies: 3, hideable: 0, hidden: 3 })
   })
 
   it('reports hashing as not done while photos are unhashed', async () => {
@@ -205,48 +215,77 @@ describe('duplicates', () => {
     expect(sorted).toEqual(['A_1.jpg', 'IMG_1.jpg', 'IMG_1 (2).jpg', 'backup/IMG_1.jpg', 'backup/old/IMG_1 copy.jpg'])
   })
 
-  it('hide: one copy of each stays; the rest become Meh', async () => {
-    const { db, lib, statusOf } = await setup(files)
+  const hiddenOf = (db: DB, p: string): boolean =>
+    db.prepare('SELECT hidden FROM photos WHERE rel_path = ?').pluck().get(p) === 1
+  const visible = (db: DB, libraryId: number, reg: FeatureRegistry): string[] =>
+    listIds(db, { libraryId, scope: { kind: 'library' }, filter: 'all', sort: 'filename' }, reg.filters(), {
+      hideReasons: reg.hideReasons()
+    }).map((i) => db.prepare('SELECT rel_path FROM photos WHERE id = ?').pluck().get(i) as string)
+
+  it('hide: one copy of each stays in review; the others are hidden — and NOT marked Meh', async () => {
+    const { db, lib, registry, statusOf } = await setup(files)
     const r = hideDuplicates(db, lib.id)
-    expect(r.marked).toBe(3)
-    expect(statusOf('IMG_1.jpg')).toBe('unreviewed')
-    expect(statusOf('backup/IMG_1.jpg')).toBe('meh')
-    expect(statusOf('backup/old/IMG_1 copy.jpg')).toBe('meh')
-    expect(statusOf('IMG_2.jpg')).toBe('unreviewed')
-    expect(statusOf('x/IMG_2.jpg')).toBe('meh')
-    expect(statusOf('unique.jpg')).toBe('unreviewed')
-    expect(hideDuplicates(db, lib.id).marked).toBe(0) // nothing left to do
+    expect(r.hidden).toBe(3)
+    expect(['backup/IMG_1.jpg', 'backup/old/IMG_1 copy.jpg', 'x/IMG_2.jpg'].every((p) => hiddenOf(db, p))).toBe(true)
+    // statuses untouched: nothing became Meh
+    for (const p of Object.keys(files)) expect(statusOf(p)).toBe('unreviewed')
+    // each photo now comes up once when reviewing
+    expect(visible(db, lib.id, registry)).toEqual(['IMG_1.jpg', 'IMG_2.jpg', 'unique.jpg'])
+    expect(hideDuplicates(db, lib.id).hidden).toBe(0) // nothing left to do
   })
 
-  it('hide never overrides explicit marks; a Liked copy is the one that stays', async () => {
+  it('hidden copies are left out of counts and folders too', async () => {
+    const { db, lib, registry } = await setup(files)
+    hideDuplicates(db, lib.id)
+    const vis = { hideReasons: registry.hideReasons() }
+    expect(statusCounts(db, lib.id, { kind: 'library' }, vis)).toEqual({ total: 3, unreviewed: 3, like: 0, meh: 0 })
+    expect(libraryStats(db, lib.id, vis)).toMatchObject({ total: 3, hidden: 3 })
+    expect(listFolders(db, lib.id, vis).map((f) => f.dirPath)).toEqual([]) // backup/ and x/ only held hidden copies
+  })
+
+  it('copies you have marked are never hidden; a marked copy keeps the group visible', async () => {
     const { db, lib, statusOf, setStatus } = await setup(files)
     setStatus('backup/old/IMG_1 copy.jpg', 'like') // the user prefers this one
     setStatus('IMG_2.jpg', 'meh')
-    setStatus('x/IMG_2.jpg', 'meh') // whole group already Meh: left alone
+    setStatus('x/IMG_2.jpg', 'meh') // both copies marked: left alone
     expect(planHide(db, lib.id).length).toBe(2)
     hideDuplicates(db, lib.id)
-    expect(statusOf('backup/old/IMG_1 copy.jpg')).toBe('like')
-    expect(statusOf('IMG_1.jpg')).toBe('meh')
-    expect(statusOf('backup/IMG_1.jpg')).toBe('meh')
-    expect(statusOf('IMG_2.jpg')).toBe('meh')
+    expect(hiddenOf(db, 'backup/old/IMG_1 copy.jpg')).toBe(false)
+    expect(hiddenOf(db, 'IMG_1.jpg')).toBe(true)
+    expect(hiddenOf(db, 'backup/IMG_1.jpg')).toBe(true)
+    expect(hiddenOf(db, 'IMG_2.jpg') || hiddenOf(db, 'x/IMG_2.jpg')).toBe(false)
+    expect(statusOf('IMG_1.jpg')).toBe('unreviewed') // hidden, but still unreviewed
   })
 
-  it('a single Cmd+Z undoes the whole hide, restoring the exact previous state', async () => {
+  it('a single Cmd+Z brings every hidden copy back, restoring the exact previous state', async () => {
     const { db, lib } = await setup(files)
     db.prepare("UPDATE photos SET status = 'like' WHERE rel_path = 'unique.jpg'").run()
-    const before = db.prepare('SELECT id, status FROM photos ORDER BY id').all()
+    const snapshot = (): unknown[] =>
+      db.prepare('SELECT id, status, hidden, hidden_reason FROM photos ORDER BY id').all()
+    const before = snapshot()
     hideDuplicates(db, lib.id)
     const r = undoLast(db, lib.id)!
     expect(r.changes).toHaveLength(3)
-    expect(db.prepare('SELECT id, status FROM photos ORDER BY id').all()).toEqual(before)
+    expect(r.changes.every((c) => c.field === 'hidden' && c.hidden === false)).toBe(true)
+    expect(snapshot()).toEqual(before)
   })
 
-  it('the duplicates filter lists only photos with copies, each group kept together', async () => {
+  it('turning the feature off makes hidden copies reappear (no cleanup needed)', async () => {
+    const { db, lib, registry } = await setup(files)
+    hideDuplicates(db, lib.id)
+    expect(visible(db, lib.id, registry)).toHaveLength(3)
+    const withoutFeature = new FeatureRegistry() // as if dedupe were turned off
+    expect(visible(db, lib.id, withoutFeature)).toHaveLength(6)
+  })
+
+  it('the duplicates filter lists only photos with copies — hidden ones too — each group kept together', async () => {
     const { db, lib, registry, idOf } = await setup(files)
+    hideDuplicates(db, lib.id)
     const ids = listIds(
       db,
       { libraryId: lib.id, scope: { kind: 'library' }, filter: 'duplicates', sort: 'filename' },
-      registry.filters()
+      registry.filters(),
+      { hideReasons: registry.hideReasons() }
     )
     const paths = ids.map((i) => db.prepare('SELECT rel_path FROM photos WHERE id = ?').pluck().get(i))
     // filename order would interleave the groups; clustering keeps each group's copies adjacent

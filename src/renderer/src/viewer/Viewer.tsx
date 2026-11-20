@@ -95,10 +95,12 @@ export function Viewer({
 
   // --- Loading the list -------------------------------------------------------------------
 
-  /** Rebuilds the list for `v`, staying on `keepId` if it's still there. */
+  /** Rebuilds the list for `v`, staying on the current photo if it's still in it. */
   const loadList = useCallback(
-    async (v: ViewSpec, keepId: number | undefined, fallbackIndex: number) => {
+    async (v: ViewSpec, fallbackIndex: number) => {
       const list = await api.photos.list(v)
+      // Stay on whatever photo is current *now* — the user may have moved while the list loaded.
+      const keepId = currentIdRef.current
       cache.clear()
       setIds(list.ids)
       setStatuses(list.statuses)
@@ -142,7 +144,7 @@ export function Viewer({
     if (!view || !progress || progress.libraryId !== library.id) return
     const phaseChanged = progress.phase !== lastPhase.current
     lastPhase.current = progress.phase
-    if (phaseChanged || ids.length === 0) void loadList(view, currentIdRef.current, index)
+    if (phaseChanged || ids.length === 0) void loadList(view, index)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress])
 
@@ -252,12 +254,20 @@ export function Viewer({
       flashToast('Nothing to undo')
       return
     }
+    const label = r.changes.length > 1 ? `Undid ${fmtNumber(r.changes.length)} changes` : 'Undone'
+    // Un-hiding brings photos back into the view: rebuild the list, staying on the current photo.
+    if (r.changes.some((c) => c.field === 'hidden')) {
+      setDone(false)
+      if (view) await loadList(view, index)
+      flashToast(label)
+      return
+    }
     const pos = new Map(ids.map((id, i) => [id, i]))
     setStatuses((s) => {
       const u = [...s]
       for (const c of r.changes) {
         const i = pos.get(c.photoId)
-        if (i !== undefined) u[i] = c.status
+        if (i !== undefined && c.field === 'status') u[i] = c.status
       }
       return u
     })
@@ -272,9 +282,9 @@ export function Viewer({
       setIndex(target)
       if (target === index && currentId !== undefined) void cache.get(currentId).then(setMeta)
     }
-    flashToast(r.changes.length > 1 ? `Undid ${fmtNumber(r.changes.length)} changes` : 'Undone')
+    flashToast(label)
     refreshCounts(view)
-  }, [api, cache, currentId, flashToast, ids, index, library.id, refreshCounts, view])
+  }, [api, cache, currentId, flashToast, ids, index, library.id, loadList, refreshCounts, view])
 
   // --- Changing the view (PLAN.md §7) -----------------------------------------------------
 
@@ -301,7 +311,7 @@ export function Viewer({
       setView(v)
       setDone(false)
       void api.settings.set(viewKey(library.id), v)
-      await loadList(v, currentIdRef.current, 0)
+      await loadList(v, 0)
     },
     [api, library.id, loadList, seedFor, view]
   )
@@ -395,7 +405,7 @@ export function Viewer({
   )
 
   const reload = useCallback(async () => {
-    if (view) await loadList(view, currentIdRef.current, index)
+    if (view) await loadList(view, index)
   }, [index, loadList, view])
 
   const featureCtx: FeatureContext | null = view
