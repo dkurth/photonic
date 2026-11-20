@@ -285,7 +285,7 @@ try {
       await shot(win, 'm3-viewer')
     })
 
-    // ---- M4: filters, sort orders, folder scopes ----
+    // ---- M4: filters and sort orders ----
     const position = () => text(win, 'position')
     const current = () => win.getByTestId('filter').getAttribute('data-filter')
 
@@ -348,34 +348,11 @@ try {
       await win.waitForFunction(() => document.querySelector('[data-testid=sort]')?.textContent.startsWith('Filename'))
     })
 
-    await step('G opens the folder picker; searching and Enter scopes the view to that folder', async () => {
+    await step('there is no folder scope: no scope chip, and G does nothing', async () => {
+      assert.equal(await win.getByTestId('scope').count(), 0)
       await win.keyboard.press('g')
-      await win.getByRole('dialog', { name: 'Go to folder' }).waitFor()
-      await win.keyboard.type('ital')
-      await shot(win, 'm4-picker')
-      await win.keyboard.press('Enter')
-      await win.getByRole('dialog').waitFor({ state: 'detached' })
-      await win.waitForFunction(() =>
-        document.querySelector('[data-testid=scope]')?.textContent.startsWith('2019/Italy')
-      )
-      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 2'))
-      assert.match(await text(win, 'counts'), /meh\s*2/)
-      await shot(win, 'm4-scoped')
-    })
-
-    await step('picker: Escape cancels; arrow keys + Enter go back to the entire library', async () => {
-      await win.keyboard.press('g')
-      await win.getByRole('dialog').waitFor()
-      await win.keyboard.press('Escape')
-      await win.getByRole('dialog').waitFor({ state: 'detached' })
-      assert.match(await text(win, 'scope'), /^2019\/Italy/)
-      await win.keyboard.press('g')
-      await win.getByRole('dialog').waitFor()
-      for (let i = 0; i < 6; i++) await win.keyboard.press('ArrowUp')
-      await win.keyboard.press('Enter')
-      await win.waitForFunction(() =>
-        document.querySelector('[data-testid=scope]')?.textContent.startsWith('Entire library')
-      )
+      await win.waitForTimeout(150)
+      assert.equal(await win.locator('[role=dialog]').count(), 0)
       await win.keyboard.press('2')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 1'))
       await win.keyboard.press('Home')
@@ -402,19 +379,16 @@ try {
     await step('marks survive a restart (missing photos keep theirs too)', async () => {
       const marked = await win.evaluate(async () => {
         const lib = await window.photonic.libraries.last()
-        return window.photonic.photos.counts(lib.id, { kind: 'library' })
+        return window.photonic.photos.counts(lib.id)
       })
       // beach liked; top, IMG_0001 meh (IMG_0002 meh is now missing, so not counted); broken + new.jpg unreviewed
       assert.deepEqual([marked.like, marked.meh, marked.unreviewed], [1, 2, 2])
     })
-    await step('switch to Like, sorted by date, scoped to a folder…', async () => {
+    await step('switch to Like, sorted by date…', async () => {
       await win.keyboard.press('3')
+      await win.waitForFunction(() => document.querySelector('[data-testid=filter]')?.dataset.filter === 'like')
       await win.keyboard.press('s')
       await win.waitForFunction(() => document.querySelector('[data-testid=sort]')?.textContent.startsWith('Date'))
-      await win.keyboard.press('g')
-      await win.keyboard.type('2020')
-      await win.keyboard.press('Enter')
-      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('2020'))
     })
     await app.close()
   }
@@ -422,8 +396,8 @@ try {
   // ------------------------------------------------------------------ run 3
   {
     const { app, win } = await launch()
-    await step('…and the view (scope, filter, sort) is restored on the next launch', async () => {
-      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('2020'))
+    await step('…and the view (filter, sort) is restored on the next launch', async () => {
+      await win.waitForFunction(() => document.querySelector('[data-testid=filter]')?.dataset.filter === 'like')
       assert.equal(await win.getByTestId('filter').getAttribute('data-filter'), 'like')
       assert.match(await text(win, 'sort'), /^Date/)
       await waitPath(win, 'beach.png')
@@ -508,16 +482,16 @@ try {
       await clickMenu('undo')
       await win.waitForSelector('text=Undone')
       const c = await win.evaluate(async () =>
-        window.photonic.photos.counts((await window.photonic.libraries.last()).id, { kind: 'library' })
+        window.photonic.photos.counts((await window.photonic.libraries.last()).id)
       )
       assert.equal(c.like, 1)
       assert.equal(c.meh, 2)
     })
 
-    await step('the segmented progress bar shows how much of the scope is reviewed', async () => {
+    await step('the segmented progress bar shows how much of the library is reviewed', async () => {
       const bar = win.getByTestId('progress')
-      assert.equal(await bar.getAttribute('aria-valuenow'), '1') // 2020/: beach liked
-      assert.equal(await bar.getAttribute('aria-valuemax'), '1')
+      assert.equal(await bar.getAttribute('aria-valuenow'), '3') // beach liked; top + IMG_0001 meh
+      assert.equal(await bar.getAttribute('aria-valuemax'), '5')
     })
 
     await step('the library switcher lists libraries (click the name or ⌘L)', async () => {
@@ -541,9 +515,7 @@ try {
     return { app, win }
   }
   const dupStats = (win) =>
-    win.evaluate(async () =>
-      window.photonic.photos.counts((await window.photonic.libraries.last()).id, { kind: 'library' })
-    )
+    win.evaluate(async () => window.photonic.photos.counts((await window.photonic.libraries.last()).id))
   {
     const { app, win } = await launchDupes()
     const [x, y, z] = await makeImages(app, [
@@ -594,7 +566,6 @@ try {
         const lib = await window.photonic.libraries.last()
         const ids = await window.photonic.photos.listIds({
           libraryId: lib.id,
-          scope: { kind: 'library' },
           filter: 'duplicates',
           sort: 'filename'
         })
@@ -642,7 +613,6 @@ try {
         const lib = await window.photonic.libraries.last()
         const ids = await window.photonic.photos.listIds({
           libraryId: lib.id,
-          scope: { kind: 'library' },
           filter: 'all',
           sort: 'filename'
         })

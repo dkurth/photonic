@@ -20,7 +20,6 @@ async function setup(files: string[]) {
     ids.map((i) => db.prepare('SELECT rel_path FROM photos WHERE id = ?').pluck().get(i) as string)
   const view = (v: Partial<ViewSpec> = {}): ViewSpec => ({
     libraryId: lib.id,
-    scope: { kind: 'library' },
     filter: 'all',
     sort: 'filename',
     ...v
@@ -60,21 +59,6 @@ describe('listIds', () => {
     const { db, paths, view } = await setup(['a.jpg', 'b.jpg'])
     db.prepare("UPDATE photos SET missing = 1 WHERE rel_path = 'a.jpg'").run()
     expect(paths(listIds(db, view()))).toEqual(['b.jpg'])
-  })
-
-  it('folder scope includes subfolders but not folders that only share a name prefix', async () => {
-    const { db, paths, view } = await setup(['2019/a.jpg', '2019/x/b.jpg', '2019-old/c.jpg', '2019_x/d.jpg', 'e.jpg'])
-    expect(paths(listIds(db, view({ scope: { kind: 'folder', dirPath: '2019' } })))).toEqual([
-      '2019/a.jpg',
-      '2019/x/b.jpg'
-    ])
-    expect(paths(listIds(db, view({ scope: { kind: 'folder', dirPath: '2019/x' } })))).toEqual(['2019/x/b.jpg'])
-    expect(listIds(db, view({ scope: { kind: 'folder', dirPath: '' } }))).toHaveLength(5)
-  })
-
-  it('folder names with SQL wildcard characters are matched literally', async () => {
-    const { db, paths, view } = await setup(['50%_off/a.jpg', '50xxoff/b.jpg'])
-    expect(paths(listIds(db, view({ scope: { kind: 'folder', dirPath: '50%_off' } })))).toEqual(['50%_off/a.jpg'])
   })
 
   it('date sort uses EXIF date, then file dates, with path as tie-breaker', async () => {

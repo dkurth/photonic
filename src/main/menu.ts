@@ -65,11 +65,7 @@ export function buildMenu(opts: MenuOptions): void {
     },
     {
       label: 'Library',
-      submenu: [
-        { label: 'Go to Folder…', accelerator: 'G', registerAccelerator: false, click: () => send('go-to-folder') },
-        { type: 'separator' },
-        { label: 'Hide Duplicates…', enabled: opts.dedupe, click: () => send('hide-duplicates') }
-      ]
+      submenu: [{ label: 'Hide Duplicates…', enabled: opts.dedupe, click: () => send('hide-duplicates') }]
     },
     {
       label: 'View',

@@ -16,7 +16,7 @@ import {
 } from '../../../src/main/features/dedupe/dedupe'
 import { hashFile, type Hasher } from '../../../src/main/features/dedupe/hash'
 import { FeatureRegistry } from '../../../src/main/features/registry'
-import { addLibrary, libraryStats, listFolders } from '../../../src/main/library'
+import { addLibrary, libraryStats } from '../../../src/main/library'
 import { undoLast } from '../../../src/main/marks'
 import { listIds, statusCounts } from '../../../src/main/ordering'
 import { scanLibrary } from '../../../src/main/scanner/scan'
@@ -218,7 +218,7 @@ describe('duplicates', () => {
   const hiddenOf = (db: DB, p: string): boolean =>
     db.prepare('SELECT hidden FROM photos WHERE rel_path = ?').pluck().get(p) === 1
   const visible = (db: DB, libraryId: number, reg: FeatureRegistry): string[] =>
-    listIds(db, { libraryId, scope: { kind: 'library' }, filter: 'all', sort: 'filename' }, reg.filters(), {
+    listIds(db, { libraryId, filter: 'all', sort: 'filename' }, reg.filters(), {
       hideReasons: reg.hideReasons()
     }).map((i) => db.prepare('SELECT rel_path FROM photos WHERE id = ?').pluck().get(i) as string)
 
@@ -234,13 +234,12 @@ describe('duplicates', () => {
     expect(hideDuplicates(db, lib.id).hidden).toBe(0) // nothing left to do
   })
 
-  it('hidden copies are left out of counts and folders too', async () => {
+  it('hidden copies are left out of counts too', async () => {
     const { db, lib, registry } = await setup(files)
     hideDuplicates(db, lib.id)
     const vis = { hideReasons: registry.hideReasons() }
-    expect(statusCounts(db, lib.id, { kind: 'library' }, vis)).toEqual({ total: 3, unreviewed: 3, like: 0, meh: 0 })
+    expect(statusCounts(db, lib.id, vis)).toEqual({ total: 3, unreviewed: 3, like: 0, meh: 0 })
     expect(libraryStats(db, lib.id, vis)).toMatchObject({ total: 3, hidden: 3 })
-    expect(listFolders(db, lib.id, vis).map((f) => f.dirPath)).toEqual([]) // backup/ and x/ only held hidden copies
   })
 
   it('copies you have marked are never hidden; a marked copy keeps the group visible', async () => {
@@ -281,12 +280,9 @@ describe('duplicates', () => {
   it('the duplicates filter lists only photos with copies — hidden ones too — each group kept together', async () => {
     const { db, lib, registry, idOf } = await setup(files)
     hideDuplicates(db, lib.id)
-    const ids = listIds(
-      db,
-      { libraryId: lib.id, scope: { kind: 'library' }, filter: 'duplicates', sort: 'filename' },
-      registry.filters(),
-      { hideReasons: registry.hideReasons() }
-    )
+    const ids = listIds(db, { libraryId: lib.id, filter: 'duplicates', sort: 'filename' }, registry.filters(), {
+      hideReasons: registry.hideReasons()
+    })
     const paths = ids.map((i) => db.prepare('SELECT rel_path FROM photos WHERE id = ?').pluck().get(i))
     // filename order would interleave the groups; clustering keeps each group's copies adjacent
     expect(paths).toEqual(['IMG_1.jpg', 'backup/IMG_1.jpg', 'backup/old/IMG_1 copy.jpg', 'IMG_2.jpg', 'x/IMG_2.jpg'])
@@ -313,8 +309,6 @@ describe('feature registration', () => {
     migrate(db, coreMigrations)
     expect(db.prepare("SELECT count(*) FROM sqlite_master WHERE name = 'photo_hashes'").pluck().get()).toBe(0)
     const lib: LibraryRow = addLibrary(db, tempDir())
-    expect(() =>
-      listIds(db, { libraryId: lib.id, scope: { kind: 'library' }, filter: 'duplicates', sort: 'filename' })
-    ).toThrow(/Unknown filter/)
+    expect(() => listIds(db, { libraryId: lib.id, filter: 'duplicates', sort: 'filename' })).toThrow(/Unknown filter/)
   })
 })

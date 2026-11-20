@@ -33,14 +33,6 @@ export interface LibraryStats {
   folders: number
 }
 
-/** A folder in a library, with counts that include its subfolders. */
-export interface FolderInfo {
-  /** Relative to the library root; '' is the root itself. */
-  dirPath: string
-  total: number
-  unreviewed: number
-}
-
 export interface DuplicateSummary {
   /** Copies beyond the first in each group (hidden or not). */
   extraCopies: number
@@ -112,14 +104,12 @@ export interface UndoResult {
 }
 
 export type SortOrder = 'filename' | 'date' | 'random'
-export type Scope = { kind: 'library' } | { kind: 'folder'; dirPath: string }
 /** Core filters; optional features may add more (e.g. 'duplicates'). */
 export type Filter = 'all' | 'unreviewed' | 'like' | 'meh' | (string & {})
 
 /** Everything that defines "the list of photos being viewed" (PLAN.md §7). */
 export interface ViewSpec {
   libraryId: number
-  scope: Scope
   filter: Filter
   sort: SortOrder
   /** Random order only: the same seed always gives the same order. */
@@ -173,8 +163,6 @@ export interface PhotonicAPI {
     last(): Promise<Library | null>
     rescan(id: number): Promise<void>
     stats(id: number): Promise<LibraryStats>
-    /** Every folder that contains photos (directly or in subfolders), in natural order. */
-    folders(id: number): Promise<FolderInfo[]>
     onProgress(cb: (p: ScanProgress) => void): Unsubscribe
   }
   photos: {
@@ -182,7 +170,7 @@ export interface PhotonicAPI {
     listIds(view: ViewSpec): Promise<number[]>
     /** listIds plus each photo's status. */
     list(view: ViewSpec): Promise<PhotoList>
-    counts(libraryId: number, scope: Scope): Promise<StatusCounts>
+    counts(libraryId: number): Promise<StatusCounts>
     /** Reads the photo's EXIF first if that hasn't happened yet, so the date is always real. */
     get(id: number): Promise<PhotoMeta | null>
     revealInFinder(id: number): Promise<void>

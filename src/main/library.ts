@@ -1,9 +1,9 @@
 import { realpathSync } from 'node:fs'
 import { basename } from 'node:path'
-import type { FolderInfo, Library, LibraryStats } from '@shared/types'
+import type { Library, LibraryStats } from '@shared/types'
 import type { DB } from './db'
 import { visibleSql } from './marks'
-import { comparePaths, type Visibility } from './ordering'
+import type { Visibility } from './ordering'
 import type { LibraryRow } from './scanner/types'
 
 export function toLibrary(r: LibraryRow): Library {
@@ -47,33 +47,4 @@ export function libraryStats(db: DB, id: number, vis: Visibility = {}): LibraryS
        FROM photos WHERE library_id = ?`
     )
     .get(id) as LibraryStats
-}
-
-/**
- * Folders with photo counts that include their subfolders (PLAN.md §7, the `G` folder picker).
- * Intermediate folders that only contain subfolders are included too. The root ('') is not.
- */
-export function listFolders(db: DB, libraryId: number, vis: Visibility = {}): FolderInfo[] {
-  const rows = db
-    .prepare(
-      `SELECT dir_path, count(*) AS total, count(*) FILTER (WHERE status = 'unreviewed') AS unreviewed
-       FROM photos WHERE library_id = ? AND missing = 0 AND ${visibleSql('photos', vis.hideReasons ?? [])}
-       GROUP BY dir_path`
-    )
-    .all(libraryId) as { dir_path: string; total: number; unreviewed: number }[]
-
-  const folders = new Map<string, FolderInfo>()
-  for (const r of rows) {
-    // Add this folder's photos to it and to every ancestor folder.
-    const parts = r.dir_path ? r.dir_path.split('/') : []
-    for (let i = 1; i <= parts.length; i++) {
-      const dirPath = parts.slice(0, i).join('/')
-      const f = folders.get(dirPath) ?? { dirPath, total: 0, unreviewed: 0 }
-      f.total += r.total
-      f.unreviewed += r.unreviewed
-      folders.set(dirPath, f)
-    }
-  }
-  // comparePaths treats the last segment as a file; compare as folders by adding a sentinel segment.
-  return [...folders.values()].sort((a, b) => comparePaths(a.dirPath + '/_', b.dirPath + '/_'))
 }

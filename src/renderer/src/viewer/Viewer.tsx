@@ -1,19 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type {
-  Filter,
-  Library,
-  PhotoMeta,
-  ScanPhase,
-  ScanProgress,
-  Scope,
-  Status,
-  StatusCounts,
-  ViewSpec
-} from '@shared/types'
+import type { Filter, Library, PhotoMeta, ScanPhase, ScanProgress, Status, StatusCounts, ViewSpec } from '@shared/types'
 import { useKeyboard } from '../hooks/useKeyboard'
 import { usePressed } from '../hooks/usePressed'
 import { DoneScreen } from './DoneScreen'
-import { FolderPicker } from './FolderPicker'
 import { ShortcutsOverlay } from './ShortcutsOverlay'
 import { fmtNumber } from './format'
 import { InfoBar } from './InfoBar'
@@ -27,15 +16,13 @@ import type { FeatureContext, RendererFeature } from '../features/types'
 
 export const defaultView = (libraryId: number): ViewSpec => ({
   libraryId,
-  scope: { kind: 'library' },
   filter: 'unreviewed',
   sort: 'filename'
 })
 
 const viewKey = (libraryId: number): string => `view.${libraryId}`
 const posKey = (libraryId: number): string => `pos.${libraryId}`
-const seedsKey = (libraryId: number): string => `seeds.${libraryId}`
-const scopeKey = (scope: Scope): string => (scope.kind === 'folder' ? `folder:${scope.dirPath}` : 'library')
+const seedKey = (libraryId: number): string => `seed.${libraryId}`
 const newSeed = (): number => Math.floor(Math.random() * 2 ** 31)
 
 export function Viewer({
@@ -63,7 +50,6 @@ export function Viewer({
   const [done, setDone] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [featureModal, setFeatureModal] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -88,7 +74,7 @@ export function Viewer({
 
   const refreshCounts = useCallback(
     (v: ViewSpec | null) => {
-      if (v) void api.photos.counts(v.libraryId, v.scope).then(setCounts)
+      if (v) void api.photos.counts(v.libraryId).then(setCounts)
     },
     [api]
   )
@@ -288,16 +274,14 @@ export function Viewer({
 
   // --- Changing the view (PLAN.md §7) -----------------------------------------------------
 
-  /** Random order keeps one seed per library + scope, so each folder's shuffle is stable. */
+  /** Random order keeps one seed per library, so its shuffle is stable across restarts. */
   const seedFor = useCallback(
-    async (scope: Scope, fresh = false): Promise<number> => {
-      const seeds = (await api.settings.get<Record<string, number>>(seedsKey(library.id))) ?? {}
-      const k = scopeKey(scope)
-      if (fresh || seeds[k] === undefined) {
-        seeds[k] = newSeed()
-        await api.settings.set(seedsKey(library.id), seeds)
-      }
-      return seeds[k]
+    async (fresh = false): Promise<number> => {
+      const saved = await api.settings.get<number>(seedKey(library.id))
+      if (!fresh && saved !== null) return saved
+      const seed = newSeed()
+      await api.settings.set(seedKey(library.id), seed)
+      return seed
     },
     [api, library.id]
   )
@@ -306,7 +290,7 @@ export function Viewer({
     async (patch: Partial<ViewSpec>, opts: { freshSeed?: boolean } = {}) => {
       if (!view) return
       const v: ViewSpec = { ...view, ...patch, libraryId: library.id }
-      if (v.sort === 'random') v.seed = await seedFor(v.scope, opts.freshSeed)
+      if (v.sort === 'random') v.seed = await seedFor(opts.freshSeed)
       else delete v.seed
       setView(v)
       setDone(false)
@@ -329,14 +313,6 @@ export function Viewer({
     if (view?.sort !== 'random') return
     void changeView({}, { freshSeed: true }).then(() => flashToast('Reshuffled'))
   }, [changeView, flashToast, view])
-
-  const pickScope = useCallback(
-    (dirPath: string | null) => {
-      setPickerOpen(false)
-      void changeView({ scope: dirPath === null ? { kind: 'library' } : { kind: 'folder', dirPath } })
-    },
-    [changeView]
-  )
 
   const copyPath = useCallback(() => {
     if (currentId === undefined) return
@@ -375,7 +351,6 @@ export function Viewer({
       o: reveal,
       s: cycleSort,
       r: reshuffle,
-      g: () => (press('scope'), setPickerOpen(true)),
       f: () => void api.app.toggleFullScreen(),
       h: () => setHudHidden((x) => !x),
       ' ': () => setZoomed((z) => !z),
@@ -383,7 +358,7 @@ export function Viewer({
       // 1–4 for the core filters, then any filters added by features (e.g. 5 = Duplicates)
       ...Object.fromEntries(filters.map((f) => [f.key, () => setFilter(f.id)]))
     },
-    !pickerOpen && !featureModal && !shortcutsOpen && !filterMenuOpen
+    !featureModal && !shortcutsOpen && !filterMenuOpen
   )
   useKeyboard({ Escape: () => setShortcutsOpen(false), '?': () => setShortcutsOpen(false) }, shortcutsOpen)
 
@@ -393,7 +368,6 @@ export function Viewer({
   useEffect(
     () =>
       api.onMenu((cmd) => {
-        if (cmd === 'go-to-folder') setPickerOpen(true)
         if (cmd === 'shortcuts') setShortcutsOpen(true)
         if (cmd === 'undo') {
           const el = document.activeElement
@@ -432,8 +406,6 @@ export function Viewer({
     }
   }
 
-  const scopeName = view?.scope.kind === 'folder' ? 'Folder' : 'Library'
-
   return (
     <div className={`viewer ${hudHidden ? 'hud-hidden' : ''} ${fullscreen ? 'fullscreen' : ''}`}>
       <TopBar
@@ -450,7 +422,6 @@ export function Viewer({
               filterMenuOpen={filterMenuOpen}
               onFilterMenu={setFilterMenuOpen}
               pressed={pressed}
-              onScope={() => setPickerOpen(true)}
               onFilter={setFilter}
               onSort={cycleSort}
             />
@@ -462,9 +433,7 @@ export function Viewer({
         empty={empty}
         flash={flash}
         zoomed={zoomed}
-        overlay={
-          done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} scopeName={scopeName} /> : null
-        }
+        overlay={done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} /> : null}
       />
       <InfoBar
         meta={meta}
@@ -487,14 +456,6 @@ export function Viewer({
       {featureCtx && features.map((f) => f.Layer && <f.Layer key={f.name} ctx={featureCtx} />)}
       {shortcutsOpen && (
         <ShortcutsOverlay extra={features.flatMap((f) => f.shortcuts ?? [])} onClose={() => setShortcutsOpen(false)} />
-      )}
-      {pickerOpen && (
-        <FolderPicker
-          libraryId={library.id}
-          current={view?.scope.kind === 'folder' ? view.scope.dirPath : null}
-          onPick={pickScope}
-          onClose={() => setPickerOpen(false)}
-        />
       )}
       {toast && (
         <div className="toast" role="status">

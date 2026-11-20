@@ -24,7 +24,6 @@ export const CORE_SHORTCUTS: ShortcutGroup[] = [
       { keys: ['1', '2', '3', '4'], label: 'All / Unreviewed / Like / Meh' },
       { keys: ['S'], label: 'Order: filename → date → random' },
       { keys: ['R'], label: 'Reshuffle (random order)' },
-      { keys: ['G'], label: 'Go to folder' },
       { keys: ['Space'], label: 'Zoom to 100% (drag to pan)' }
     ]
   },

@@ -1,11 +1,11 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import type { AppInfo, Library, ScanProgress, Scope, ViewSpec } from '@shared/types'
+import type { AppInfo, Library, ScanProgress, ViewSpec } from '@shared/types'
 import type { DB } from './db'
 import { schemaVersion } from './db'
 import { listBackups } from './db/backup'
 import type { FeatureRegistry } from './features/registry'
 import type { IpcRegistrar } from './features/types'
-import { addLibrary, getLibraryRow, libraryStats, listFolders, listLibraries, toLibrary } from './library'
+import { addLibrary, getLibraryRow, libraryStats, listLibraries, toLibrary } from './library'
 import { isStatus, setStatus, undoLast } from './marks'
 import { listIds, listPhotos, statusCounts } from './ordering'
 import { getPhotoRow, toPhotoMeta } from './photos'
@@ -23,23 +23,15 @@ function str(v: unknown, what: string): string {
   return v
 }
 
-function scope(v: unknown): Scope {
-  const o = v as Scope
-  if (o?.kind === 'library') return { kind: 'library' }
-  if (o?.kind === 'folder' && typeof o.dirPath === 'string') return { kind: 'folder', dirPath: o.dirPath }
-  throw new Error('Invalid scope')
-}
-
-/** Checks the shape of a ViewSpec coming from the renderer. */
+/** Checks the shape of a ViewSpec coming from the renderer, keeping only known fields. */
 function viewSpec(v: unknown): ViewSpec {
   const o = v as ViewSpec
   if (!o || typeof o !== 'object') throw new Error('Invalid view')
   id(o.libraryId)
   if (!['filename', 'date', 'random'].includes(o.sort)) throw new Error('Invalid sort')
   str(o.filter, 'filter')
-  scope(o.scope)
   if (o.seed !== undefined && !Number.isSafeInteger(o.seed)) throw new Error('Invalid seed')
-  return o
+  return { libraryId: o.libraryId, filter: o.filter, sort: o.sort, seed: o.seed }
 }
 
 /** IPC arguments come from the renderer; never trust their shape. */
@@ -120,13 +112,11 @@ export function registerCoreIpc(ctx: {
 
   handle('libraries:stats', (libraryId) => libraryStats(db, id(libraryId), vis))
 
-  handle('libraries:folders', (libraryId) => listFolders(db, id(libraryId), vis))
-
   handle('photos:listIds', (view) => listIds(db, viewSpec(view), ctx.features.filters(), vis))
 
   handle('photos:list', (view) => listPhotos(db, viewSpec(view), ctx.features.filters(), vis))
 
-  handle('photos:counts', (libraryId, sc) => statusCounts(db, id(libraryId), scope(sc), vis))
+  handle('photos:counts', (libraryId) => statusCounts(db, id(libraryId), vis))
 
   handle('marks:set', (photoId, status) => {
     if (!isStatus(status)) throw new Error('Invalid status')

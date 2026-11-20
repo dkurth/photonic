@@ -3,18 +3,10 @@ import { STATUS_LABELS } from '@shared/labels'
 import { fmtNumber } from './format'
 
 /** Shown when there's nowhere left to go (PLAN.md §2). */
-export function DoneScreen({
-  counts,
-  unreviewedEarlier,
-  scopeName
-}: {
-  counts: StatusCounts | null
-  unreviewedEarlier: number
-  scopeName: string
-}) {
+export function DoneScreen({ counts, unreviewedEarlier }: { counts: StatusCounts | null; unreviewedEarlier: number }) {
   return (
     <div className="done-screen" data-testid="done-screen">
-      <div className="done-title pixel">{scopeName.toUpperCase()} CLEAR!</div>
+      <div className="done-title pixel">LIBRARY CLEAR!</div>
       {counts && (
         <div className="done-scores">
           <div className="score like">

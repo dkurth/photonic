@@ -1,6 +1,6 @@
 # Photonic
 
-A keyboard-first photo culling app for macOS. Point it at a folder of photos (subfolders included) and go through them one at a time: **↑ Like** ⸜(｡˃ ᵕ ˂ )⸝♡, **↓ Meh** ¯\\_(ツ)_/¯, **←/→** to move. Decisions are stored in a local SQLite database. **Photos are never moved, changed or deleted.**
+A keyboard-first photo culling app for macOS. Point it at a folder of photos (subfolders included; to review one subfolder on its own, open it as its own library) and go through them one at a time: **↑ Like** ⸜(｡˃ ᵕ ˂ )⸝♡, **↓ Meh** ¯\\_(ツ)_/¯, **←/→** to move. Decisions are stored in a local SQLite database. **Photos are never moved, changed or deleted.**
 
 See [PLAN.md](PLAN.md) for the full design and milestone notes.
 
@@ -14,7 +14,6 @@ See [PLAN.md](PLAN.md) for the full design and milestone notes.
 | `⌘Z` | Undo (including a whole "hide duplicates" batch) |
 | `1`–`4` | All / Unreviewed / Like / Meh (`5` = Duplicates) |
 | `S` / `R` | Order: filename → date → random / reshuffle |
-| `G` | Go to a folder |
 | `Space` | Zoom to 100% (drag to pan) |
 | `C` / `O` | Copy the full path / show in Finder |
 | `F` / `H` | Full screen / hide toolbars |

@@ -131,9 +131,9 @@ describe('setHidden', () => {
   it('hidden photos are left out of lists and counts only while their reason is active', () => {
     const { db, lib, ids } = setup(3)
     setHidden(db, ids[1], true, 'duplicate')
-    const view = { libraryId: lib, scope: { kind: 'library' as const }, filter: 'all', sort: 'filename' as const }
+    const view = { libraryId: lib, filter: 'all', sort: 'filename' as const }
     expect(listPhotos(db, view, {}, { hideReasons: ['duplicate'] }).ids).toEqual([ids[0], ids[2]])
-    expect(statusCounts(db, lib, { kind: 'library' }, { hideReasons: ['duplicate'] }).total).toBe(2)
+    expect(statusCounts(db, lib, { hideReasons: ['duplicate'] }).total).toBe(2)
     expect(listPhotos(db, view, {}, { hideReasons: [] }).ids).toEqual(ids) // feature off: back in view
     expect(visibleSql('p', [])).toBe('1 = 1')
     expect(visibleSql('p', ["o'brien"])).toContain("'o''brien'")
@@ -141,11 +141,11 @@ describe('setHidden', () => {
 })
 
 describe('listPhotos / statusCounts', () => {
-  it('returns statuses aligned with ids, and counts by scope', () => {
+  it('returns statuses aligned with ids, and counts them', () => {
     const { db, lib, ids } = setup(3)
     setStatus(db, ids[1], 'like')
-    const list = listPhotos(db, { libraryId: lib, scope: { kind: 'library' }, filter: 'all', sort: 'filename' })
+    const list = listPhotos(db, { libraryId: lib, filter: 'all', sort: 'filename' })
     expect(list).toEqual({ ids, statuses: ['unreviewed', 'like', 'unreviewed'] })
-    expect(statusCounts(db, lib, { kind: 'library' })).toEqual({ total: 3, unreviewed: 2, like: 1, meh: 0 })
+    expect(statusCounts(db, lib)).toEqual({ total: 3, unreviewed: 2, like: 1, meh: 0 })
   })
 })

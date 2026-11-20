@@ -25,10 +25,6 @@ export function nextSort(s: SortOrder): SortOrder {
   return SORTS[(SORTS.indexOf(s) + 1) % SORTS.length]
 }
 
-export function scopeLabel(view: ViewSpec): string {
-  return view.scope.kind === 'folder' ? view.scope.dirPath : 'Entire library'
-}
-
 function countFor(id: Filter, counts: StatusCounts | null): number | null {
   if (!counts) return null
   if (id === 'all') return counts.total
@@ -130,7 +126,7 @@ function FilterMenu({
   )
 }
 
-/** Scope, filter and sort controls in the top bar. Every one has a key (PLAN.md §2). */
+/** Filter and sort controls in the top bar. Every one has a key (PLAN.md §2). */
 export function ViewControls({
   view,
   filters,
@@ -138,7 +134,6 @@ export function ViewControls({
   filterMenuOpen,
   onFilterMenu,
   pressed,
-  onScope,
   onFilter,
   onSort
 }: {
@@ -149,22 +144,11 @@ export function ViewControls({
   filterMenuOpen: boolean
   onFilterMenu: (open: boolean) => void
   pressed: Set<string>
-  onScope: () => void
   onFilter: (f: Filter) => void
   onSort: () => void
 }) {
   return (
     <div className="view-controls">
-      <button
-        className={`chip scope ${pressed.has('scope') ? 'pressed' : ''}`}
-        onClick={onScope}
-        onMouseDown={(e) => e.preventDefault()}
-        title="Go to folder (G)"
-        data-testid="scope"
-      >
-        <span className="chip-label">{scopeLabel(view)}</span>
-        <KeyCap k="G" />
-      </button>
       <FilterMenu
         view={view}
         filters={filters}

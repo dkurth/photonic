@@ -1,4 +1,4 @@
-import type { PhotoList, Scope, SortOrder, Status, StatusCounts, ViewSpec } from '@shared/types'
+import type { PhotoList, SortOrder, Status, StatusCounts, ViewSpec } from '@shared/types'
 import type { DB } from './db'
 import { visibleSql } from './marks'
 import { displayDate } from './photos'
@@ -68,15 +68,6 @@ export function seededShuffle<T>(items: T[], seed: number): T[] {
   return out
 }
 
-function scopeSql(scope: Scope): { where: string; params: unknown[] } {
-  if (scope.kind === 'library' || scope.dirPath === '') return { where: '1 = 1', params: [] }
-  // substr instead of LIKE so folder names containing % or _ need no escaping.
-  return {
-    where: '(p.dir_path = ? OR substr(p.dir_path, 1, ?) = ?)',
-    params: [scope.dirPath, scope.dirPath.length + 1, scope.dirPath + '/']
-  }
-}
-
 /**
  * The ordered photo IDs for a view (PLAN.md §7). This is the one place that decides which
  * photos are in a view. Missing photos are never included.
@@ -102,14 +93,13 @@ export function listPhotos(
   else if (extraFilters[view.filter]) filter = extraFilters[view.filter](view.libraryId)
   else throw new Error(`Unknown filter: ${view.filter}`)
 
-  const scope = scopeSql(view.scope)
   const rows = db
     .prepare(
       `SELECT p.id, p.rel_path, p.taken_at, p.birthtime_ms, p.mtime_ms, p.status, ${filter.groupBy ?? 'NULL'} AS grp FROM photos p
-       WHERE p.library_id = ? AND p.missing = 0 AND ${scope.where} AND ${filter.where}
+       WHERE p.library_id = ? AND p.missing = 0 AND ${filter.where}
          AND ${filter.includeHidden ? '1 = 1' : visibleSql('p', vis.hideReasons ?? [])}`
     )
-    .all(view.libraryId, ...scope.params, ...filter.params) as {
+    .all(view.libraryId, ...filter.params) as {
     id: number
     rel_path: string
     taken_at: string | null
@@ -135,19 +125,17 @@ function clusterGroups<T extends { grp: unknown }>(rows: T[]): T[] {
   return [...groups.values()].flat()
 }
 
-/** Status counts for a library, or one folder of it (missing photos excluded). */
-export function statusCounts(db: DB, libraryId: number, scope: Scope, vis: Visibility = {}): StatusCounts {
-  const s = scopeSql(scope)
+/** Status counts for a library (missing and hidden photos excluded). */
+export function statusCounts(db: DB, libraryId: number, vis: Visibility = {}): StatusCounts {
   return db
     .prepare(
       `SELECT count(*) AS total,
          count(*) FILTER (WHERE p.status = 'unreviewed') AS unreviewed,
          count(*) FILTER (WHERE p.status = 'like') AS "like",
          count(*) FILTER (WHERE p.status = 'meh') AS meh
-       FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${s.where}
-         AND ${visibleSql('p', vis.hideReasons ?? [])}`
+       FROM photos p WHERE p.library_id = ? AND p.missing = 0 AND ${visibleSql('p', vis.hideReasons ?? [])}`
     )
-    .get(libraryId, ...s.params) as StatusCounts
+    .get(libraryId) as StatusCounts
 }
 
 function sortRows<
