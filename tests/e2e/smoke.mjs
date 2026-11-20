@@ -20,7 +20,8 @@ const tmp = mkdtempSync(join(tmpdir(), 'photonic-e2e-'))
 const launchWith = (dataDir) =>
   _electron.launch({
     ...(process.env.E2E_EXECUTABLE ? { executablePath: process.env.E2E_EXECUTABLE, args: [] } : { args: ['.'] }),
-    env: { ...process.env, PHOTONIC_USER_DATA: dataDir }
+    // Hidden: never shown on screen and never takes focus (see src/main/index.ts).
+    env: { ...process.env, PHOTONIC_USER_DATA: dataDir, PHOTONIC_HIDDEN: '1' }
   })
 const userData = join(tmp, 'userdata')
 const photos = join(tmp, 'My Photos')

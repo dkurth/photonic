@@ -24,6 +24,14 @@ if (process.env.PHOTONIC_USER_DATA) {
 
 registerPhotoScheme()
 
+/**
+ * PHOTONIC_HIDDEN=1 (set by the e2e tests and any automated run): the window is never shown and
+ * the app can't become the active app, so automated runs don't flash on screen or steal focus.
+ * Chromium still renders hidden windows, so Playwright can drive it and take screenshots.
+ */
+const HIDDEN = process.env.PHOTONIC_HIDDEN === '1'
+if (HIDDEN && process.platform === 'darwin') app.setActivationPolicy('prohibited') // no Dock icon, never frontmost
+
 let db: DB | null = null
 let scans: ScanService | null = null
 let backupDone: Promise<void> = Promise.resolve()
@@ -50,12 +58,14 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
+      // A hidden window would otherwise have its timers and animations throttled.
+      backgroundThrottling: !HIDDEN,
       nodeIntegration: false,
       sandbox: true
     }
   })
 
-  win.once('ready-to-show', () => win.show())
+  if (!HIDDEN) win.once('ready-to-show', () => win.show())
 
   // Never navigate the app window away; open external links in the browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {

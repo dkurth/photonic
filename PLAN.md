@@ -3,6 +3,7 @@
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
 Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
+- v1.6: `PHOTONIC_HIDDEN=1` runs the app without ever showing its window or taking focus (no Dock icon, rendering still works for Playwright and screenshots). The e2e suite always uses it.
 - v1.5: **Like / Meh a whole folder** (`F`): type a folder path (absolute, relative to the library, or `~/…`) or browse, see how many photos it holds (subfolders included), then Meh / Like / Cancel. If photos carry the opposite mark, it asks first: *"20 photos in that folder are marked Like. Do you want to overwrite that?"* → *Meh them all* / *Meh only the unreviewed ones*. One batch, so one ⌘Z undoes it. **Full-screen mode removed** (the window isn't fullscreenable; `F` is reused). The date no longer adds "· no EXIF date".
 - v1.4: First / last photo buttons (⏮ ⏭, icon-only pixel art) beside Prev / Next. Home / End push them.
 - v1.3: **Folder scopes removed** (the `G` picker and "Entire library" chip). To review one folder on its own, open it as its own library. Views are now just filter + sort, counts are per library, and the random seed is one per library.
