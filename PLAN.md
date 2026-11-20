@@ -1,0 +1,670 @@
+# Photonic — Plan
+
+A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
+
+Status: **v0.8** (2026-11-20). **M0 complete.**
+- v0.8: M0 built. Dev builds use a separate `Photonic-dev` data folder. better-sqlite3 13 ships prebuilt binaries that work in both Node and Electron, so tests run under plain Node.
+- v0.7: fonts are Monocraft (pixel), DM Sans (UI, proposed) and Space Mono (data). Arcade is the default palette.
+- v0.6: look & feel (§12): Gumroad-style raised buttons, small 8-bit touches, swappable Coolors palettes. Export removed from this plan.
+- v0.5: statuses renamed to **Like** ⸜(｡˃ ᵕ ˂ )⸝♡ and **Meh** ¯\_(ツ)_/¯ (stored as `like` / `meh`); export is limited to Liked photos and playlists.
+- v0.4: "delete" means *not selected*, and files are never removed; marking in Keep/Delete views fixed; export planned as an action on any set of photos.
+- v0.2 added content hashing, detection of moved/renamed files, and duplicate handling.
+- v0.3 answers the open questions: no HEIC or RAW, EXIF metadata, sorting (including random order), folder scopes, path and date always on screen, jumping to the next unreviewed photo after a mark, and duplicates as a feature that can be turned off.
+
+---
+
+## 1. Goals
+
+- Point the app at a directory. Subdirectories are included.
+- Show one photo at a time, as large as the window allows.
+- Sort photos with single keystrokes. Every action finishes instantly, with no confirmation dialogs.
+- Store all decisions in a local SQLite database. **The app never changes, moves or deletes photo files.**
+- Reviewing is **selecting**. *Like* means "selected". *Meh* means "not selected" and nothing else; the file is never touched.
+- View any group of photos: Liked, Meh, unreviewed, or all, within the whole library or one folder.
+- Pick up where I left off when I reopen the app.
+- Always show the photo's **full path** and **capture date** while reviewing.
+- Browse in different orders (filename, capture date, or **random**) across the whole library or within one folder.
+- *(Optional feature, can be turned off; see §8)* Identify photos by content, so moved or renamed files keep their marks, and find exact duplicates.
+- Lay groundwork for later features (playlists first) without building them now.
+
+### Non-goals (for now)
+
+- **HEIC/HEIF:** ignored. The few that exist already have JPG versions.
+- **RAW files:** ignored. There aren't any.
+- **Paired files** (RAW+JPEG, Live Photos): no special handling. Every file is its own photo.
+- **Videos:** ignored.
+- Deleting or trashing files. **Not planned, ever.** Photos marked *Meh* simply aren't selected.
+- Editing, cropping, rotating
+- Cloud sync, multiple users
+- Photo management features like tags, albums and search (playlists come later)
+
+---
+
+## 2. Core interaction
+
+| Key | Action |
+|---|---|
+| `→` | Next photo (no change) |
+| `←` | Previous photo (no change) |
+| `↑` | Mark **Like** ⸜(｡˃ ᵕ ˂ )⸝♡, then go to the **next unreviewed** photo |
+| `↓` | Mark **Meh** ¯\_(ツ)_/¯, then go to the **next unreviewed** photo |
+| `Backspace` / `U` | Clear the mark (back to *unreviewed*); stay on this photo |
+| `Cmd+Z` | Undo the last mark (or the last bulk action) and go back to that photo |
+| `Home` / `End` | First / last photo |
+| `S` | Cycle sort order: Filename → Capture date → Random |
+| `R` | Reshuffle (random order only) |
+| `G` | Go to folder: a searchable list of folders. Choose one to view just that folder (and its subfolders), or choose "Entire library". |
+| `1` `2` `3` `4` | Filter: All / Unreviewed / Like / Meh |
+| `5` | Filter: Duplicates *(only when the duplicates feature is on)* |
+| `D` | Show other copies of this photo *(only when the duplicates feature is on)* |
+| `C` | Copy the full path to the clipboard |
+| `O` | Show the file in Finder |
+| `Space` | Toggle between fit-to-window and 100% zoom (drag to pan), for checking sharpness |
+| `F` | Toggle full screen |
+| `H` | Hide or show the *extra* HUD (counts, toolbar). The path and date stay visible. |
+| `?` | Show the shortcut overlay |
+
+Clickable buttons for the same actions sit in a bottom toolbar. They're there if you want them, but keys are the main way to use the app.
+
+**Behaviour details**
+
+- **Where `↑`/`↓` go next depends on the filter:**
+  - **All / Unreviewed:** jump to the next *unreviewed* photo after the current one, skipping photos that are already marked.
+  - **Like / Meh / Duplicates:** go to the **next photo** in the list. These views are for looking back over decisions you've already made, so there usually aren't any unreviewed photos to jump to.
+  - In every view, `→`/`←` go through every photo one by one, so you can go back to anything.
+- **Key repeat:** holding an arrow key keeps moving through photos. Holding `↑`/`↓` does **not** keep marking. Repeated keydown events (`event.repeat`) are ignored for marking keys so one stuck key can't mark a whole folder.
+- **Marking a photo that's already marked** just overwrites the status, e.g. `↑` on a *Meh* photo changes it to *Like*.
+- **Feedback:** after a mark, a short (~150 ms) colored flash and status badge appear (Like: the theme's `--like` color with ⸜(｡˃ ᵕ ˂ )⸝♡; Meh: the theme's calm `--meh` color with ¯\_(ツ)_/¯, deliberately *not* alarming red, since nothing is being removed; see §12), so you can see the mark registered even after the view has moved on.
+- **End of list:** when there's nowhere left to go, a summary screen appears: *"Done: N Liked, M Meh."* If unreviewed photos remain *earlier* in the list, it adds: *"K unreviewed earlier. Press Enter to go to the first one."* The list never wraps around by itself.
+
+---
+
+## 3. Tech stack
+
+| Concern | Choice | Why |
+|---|---|---|
+| Shell | **Electron** (current stable) | As requested |
+| Build tooling | **electron-vite** + **TypeScript** | Separate builds for main, preload and renderer; fast HMR |
+| UI | **React** (minimal) | The UI is small, so plain DOM would also work. React makes the later playlist UI easier. |
+| Database | **better-sqlite3** | Synchronous, fast, mature. Needs a native rebuild for Electron (`electron-builder install-app-deps`). It also has an online `.backup()` API (§6). |
+| EXIF | **exifr** | Fast. Only reads the start of each file, where the EXIF data is. |
+| Packaging | **electron-builder** | Builds a macOS `.app`/`.dmg` |
+| Tests | **Vitest** (DB, scanner, ordering), **Playwright for Electron** (a few end-to-end tests) | |
+
+*Alternative:* `node:sqlite` is built into Electron's Node runtime and needs no native module. Its API is still marked experimental, so better-sqlite3 is the safer choice for now. All DB access goes through one module, so switching later is cheap.
+
+---
+
+## 4. Architecture
+
+```
+┌──────────────────────── Main process ────────────────────────┐
+│  db/          better-sqlite3, migrations, queries, backups   │
+│  scanner/     walk → upsert → metadata (EXIF) worker         │
+│  ordering     filter + scope + sort → ordered photo IDs      │
+│  protocol     photo://<photoId> → streams file from disk     │
+│  ipc          typed handlers (library, photos, marks, undo)  │
+│  features/dedupe/   OPTIONAL: hashing, move detection,       │
+│                     duplicates. Plugs in through hooks (§8)  │
+└──────────────▲───────────────────────────────────────────────┘
+               │ contextBridge (preload: window.photonic.*)
+┌──────────────┴───────── Renderer (React) ────────────────────┐
+│  Viewer · InfoBar · HUD/toolbar · FolderPicker · keyboard    │
+│  features/dedupe/   OPTIONAL: banner, copies panel           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Security baseline:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. The renderer only reaches the system through a small typed API exposed by the preload script.
+
+**Serving images:** the main process registers a custom protocol (`protocol.handle('photo', ...)`). The renderer asks for `photo://<id>`. The main process looks up the ID in the DB, checks that the resolved path is inside the library root, and streams the file. The renderer never builds filesystem paths, and `file://` access stays turned off. The full path is still sent to the renderer as *text* so it can be displayed.
+
+**EXIF orientation:** Chromium applies it by default (`image-orientation: from-image`), so no extra work is needed.
+
+---
+
+## 5. Data model
+
+The database file lives in the app's `userData` directory (`~/Library/Application Support/Photonic/photonic.db`), not inside the photo folder. That keeps the photo folder untouched and lets one DB cover several libraries, which matters once playlists can mix photos from different folders.
+
+### Core schema (migration `001_init.sql`)
+
+```sql
+CREATE TABLE libraries (
+  id              INTEGER PRIMARY KEY,
+  root_path       TEXT NOT NULL UNIQUE,      -- absolute path
+  name            TEXT NOT NULL,             -- default: folder basename
+  added_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  last_scanned_at TEXT
+);
+
+CREATE TABLE photos (
+  id            INTEGER PRIMARY KEY,
+  library_id    INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+  rel_path      TEXT NOT NULL,               -- relative to library root, POSIX separators
+  dir_path      TEXT NOT NULL,               -- rel_path's folder ('' for root); for folder scopes
+  size_bytes    INTEGER NOT NULL,
+  mtime_ms      INTEGER NOT NULL,
+  birthtime_ms  INTEGER,                     -- file creation time (macOS provides it)
+
+  -- EXIF (filled by the metadata pass; NULL when the file has no EXIF data)
+  taken_at      TEXT,                        -- DateTimeOriginal (or CreateDate), 'YYYY-MM-DD HH:MM:SS', camera-local time
+  width         INTEGER,
+  height        INTEGER,
+  camera_make   TEXT,
+  camera_model  TEXT,
+  lens_model    TEXT,
+  exif_json     TEXT,                        -- small subset of other EXIF fields (ISO, exposure, GPS…) for later use
+  meta_read_at  TEXT,                        -- set when the EXIF read has been attempted, even if nothing was found
+
+  status        TEXT NOT NULL DEFAULT 'unreviewed'
+                  CHECK (status IN ('unreviewed','like','meh')),
+  status_at     TEXT,
+  missing       INTEGER NOT NULL DEFAULT 0,  -- 1 if not found on last scan
+  first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (library_id, rel_path)
+);
+CREATE INDEX photos_library_status ON photos(library_id, status);
+CREATE INDEX photos_library_dir    ON photos(library_id, dir_path);
+CREATE INDEX photos_library_taken  ON photos(library_id, taken_at);
+
+-- Append-only log of every status change; powers undo, and later an audit or history view.
+CREATE TABLE mark_events (
+  id          INTEGER PRIMARY KEY,
+  photo_id    INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+  old_status  TEXT NOT NULL,
+  new_status  TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'user',  -- 'user', or the name of a bulk action such as 'dedupe'
+  batch_id    INTEGER,                       -- events from one bulk action share an ID, so Cmd+Z undoes them together
+  at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Key/value store for UI state and feature flags.
+CREATE TABLE settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL                        -- JSON
+);
+
+CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+```
+
+### Dedupe feature schema (migration `100_dedupe.sql`, see §8)
+
+```sql
+-- In its own table on purpose, so the feature can be removed with no change to `photos`.
+CREATE TABLE photo_hashes (
+  photo_id     INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+  content_hash TEXT NOT NULL,                -- SHA-256 hex of the file's bytes
+  size_bytes   INTEGER NOT NULL,             -- size and mtime at the time of hashing; if they no longer match
+  mtime_ms     INTEGER NOT NULL,             -- the photos row, the hash is stale
+  hashed_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX photo_hashes_hash ON photo_hashes(content_hash);
+```
+
+Notes:
+- **Stable integer `photos.id`** is the key every later feature refers to (playlists, etc.).
+- Paths are stored **relative** to the library root, so a moved or renamed root folder can be re-pointed without losing decisions.
+- A status change and its `mark_events` row are written in **one transaction**.
+- Turn on `PRAGMA journal_mode = WAL` and `PRAGMA foreign_keys = ON`.
+- Migrations are numbered SQL files and run at startup. Feature migrations use the 100+ range so they stay separate from core migrations.
+
+**Status names:** the words, emoticons and colors shown in the UI all come from one file, `src/shared/labels.ts`, and never from the DB values directly:
+
+```ts
+export const STATUS_LABELS = {
+  unreviewed: { label: 'Unreviewed', emoticon: '' },
+  like:       { label: 'Like',       emoticon: '⸜(｡˃ ᵕ ˂ )⸝♡' },
+  meh:        { label: 'Meh',        emoticon: '¯\\_(ツ)_/¯' },
+} as const;
+```
+
+The emoticons appear on the toolbar buttons, the status badge, the mark flash, and the filter names. Make sure the app's font can draw `⸜ ⸝ ᵕ ˃ ˂ ツ`; the macOS system font can.
+
+**Display date** (used in the info bar and for date sorting): `taken_at`, otherwise `birthtime_ms`, otherwise `mtime_ms`. The UI labels which one it is (e.g. *"Taken 2019-07-04 14:32"* vs *"File created 2021-01-10 (no EXIF date)"*).
+
+---
+
+## 6. Scanning & metadata
+
+The core scan doesn't depend on the dedupe feature at all.
+
+### Walk
+
+1. The user picks a folder (`dialog.showOpenDialog`, `openDirectory`). If it's new, a `libraries` row is created.
+2. The app walks the folder recursively with async `fs.opendir`. It skips hidden files and folders (names starting with `.`) and doesn't follow symlinks, which also avoids symlink loops.
+3. Files are included by extension (case-insensitive): `jpg jpeg png gif webp avif bmp`. Everything else (HEIC, RAW, video, sidecar files) is ignored.
+4. Each file found is sorted into one of three groups:
+   - **Known path, same size and mtime:** unchanged. Set `missing = 0`.
+   - **Known path, size or mtime changed:** the file was edited. Update the stat fields and clear `meta_read_at` so EXIF is read again. Its status is **kept**.
+   - **Unknown path:** a new file. Insert it as `unreviewed`, unless a scan hook claims it as a moved file (§8).
+5. Writes go to the DB in **batches of ~500 inside a transaction**. Existing `status` values are never overwritten.
+6. After the walk, rows not seen during this scan get `missing = 1`. They're hidden from the viewer, but their rows and decisions are kept.
+7. The UI shows scan progress ("Scanning… 12,340 files") through IPC events, and the viewer can open as soon as the first batch is in.
+8. A rescan runs automatically when a library opens. A manual **Rescan** command is also available.
+
+### Metadata pass (EXIF)
+
+- A **worker thread** reads EXIF data with exifr for every row where `meta_read_at IS NULL`. exifr only reads the start of each file, so on an SSD this takes a minute or two for a library of tens of thousands of photos.
+- Results are saved one at a time as they're read, so the pass can be **resumed** if the app is closed partway through.
+- **The photo on screen comes first:** if the current photo hasn't been read yet, `photos.get` reads its EXIF right away (a few milliseconds), so the info bar always has a real date.
+- While this pass is running, *Capture date* sort uses the fallback date for photos not read yet, and the HUD shows *"Reading dates… 40%"*. The list is rebuilt automatically when the pass finishes, but only if you're viewing in date order. The photo you're on stays the same.
+
+### Database backups
+
+The database is the only record of hours of review work, so:
+- On launch, if the latest backup is more than 24 hours old, the app makes a copy with `db.backup()` into `userData/backups/photonic-YYYYMMDDTHHMMSSZ.db` (UTC; written to a `.partial` file first, then renamed).
+- It keeps the last 7 backups.
+
+---
+
+## 7. Viewer, ordering & navigation
+
+### The four ways to view
+
+| Want to… | Filter | Key |
+|---|---|---|
+| Review photos you haven't decided on yet (the default) | Unreviewed | `2` |
+| Look at what you've selected | Like | `3` |
+| Look at what you shrugged at (and rescue any with `↑`) | Meh | `4` |
+| Browse everything | All | `1` |
+
+Each of these can be combined with any scope (whole library or one folder) and any sort order (filename, date, random).
+
+### Building the list
+
+What you're viewing is defined by three settings, stored per library in `settings`:
+
+| Setting | Options |
+|---|---|
+| **Scope** | Entire library, or one folder including its subfolders (`dir_path = ? OR dir_path LIKE ? || '/%'`) |
+| **Filter** | All / Unreviewed / Like / Meh (+ Duplicates when the dedupe feature is on) |
+| **Sort** | Filename (natural sort on `rel_path`) / Capture date (display date, then `rel_path`) / Random |
+
+- The main process turns these settings into an **ordered list of photo IDs**, which the renderer navigates by index. With fewer than 100k photos this is at most a few hundred KB, so there's no need to load it in pages.
+- **Random order** is a Fisher–Yates shuffle with a seeded random generator. The seed is saved per library and scope, so the order **stays the same** across restarts and resuming works. `R` picks a new seed.
+- **The list is a snapshot:** marking a photo doesn't remove it from the current list, even in the *Unreviewed* filter, so `←` still takes you back to it. The list is only rebuilt when scope, filter or sort changes, or after a rescan.
+- **Default on open:** the scope, filter and sort you last used (initially: Entire library / Unreviewed / Filename), starting at the last photo viewed. If that photo isn't in the list, start at the first one.
+- **Folder picker (`G`):** a quick list of folders built from `SELECT DISTINCT dir_path`, with type-to-search. Each folder shows how many photos are still unreviewed in it.
+
+### Display
+
+- `object-fit: contain` on a dark background, filling the window. `Space` switches to 100% zoom (drag to pan).
+- **Preloading:** keep the next 2 and previous 1 photos loaded as off-screen `Image` objects (`decode()`), so moving between photos is instant. Drop anything outside that window. "Next" here means the photo that `↑`/`↓` would jump to, i.e. the next unreviewed one.
+- **Missing or unreadable files:** show a placeholder with the path and an error message. Navigation and marking still work.
+
+### Info bar (always visible, `H` doesn't hide it)
+
+A strip along the bottom edge, also shown in full screen:
+- **Full absolute path:** `root_path + rel_path`. Long paths wrap onto a second line instead of being cut off. The text can be selected, and `C` copies it.
+- **Date:** the display date with its source label (§5).
+- Status badge and position (`1,204 / 8,930`).
+
+### HUD (can be hidden with `H`)
+
+- Top bar: scope, filter, sort, and counts (Like / Meh / unreviewed) for the current scope.
+- Bottom toolbar with buttons. Optional camera/lens/size details from EXIF.
+- Banners for scan, metadata and duplicate progress.
+
+---
+
+## 8. Duplicates & move detection (optional feature)
+
+> **This is an experiment.** It's built as a self-contained feature that can be turned off with a setting, or deleted from the code, without touching the core app.
+
+### What it does
+
+1. **Hashing:** a background worker computes SHA-256 hashes of file contents. The internal SSD makes this fast enough: a few minutes for a large library, and it doesn't block reviewing.
+2. **Move/rename detection:** a photo that moves to a new path keeps its `id` and its mark.
+3. **Duplicate detection:** counts identical files and offers to hide the extra copies.
+
+### How it stays removable
+
+- **Code:** everything lives in `src/main/features/dedupe/` and `src/renderer/src/features/dedupe/`. The core has **no imports** from these folders.
+- **Hooks:** the core exposes a small set of extension points, and the feature registers itself through them:
+
+  ```ts
+  // src/main/features/types.ts (core)
+  interface Feature {
+    name: string;
+    migrations: string[];                        // e.g. ['100_dedupe.sql']
+    registerIpc(ipc: IpcRegistrar): void;        // adds window.photonic.duplicates.*
+    scanHooks?: {
+      // Called once per scan with new paths and missing rows; returns pairs to treat as moves.
+      matchMoves?(ctx: ScanContext, added: NewFile[], missing: PhotoRow[]): Promise<MovePair[]>;
+      // Called after the walk finishes; starts background hashing.
+      afterScan?(ctx: ScanContext): void;
+    };
+    filters?: Record<string, FilterImpl>;        // adds the 'duplicates' filter
+  }
+  ```
+
+  ```ts
+  // src/main/index.ts — the only line that mentions the feature
+  if (settings.get('feature.dedupe') ?? true) features.register(dedupeFeature);
+  ```
+
+  The renderer works the same way: one registration line adds the banner, the "copies" indicator, the `D` and `5` keys, and the Duplicates filter.
+- **Data:** the hashes live in their own `photo_hashes` table. The only things it puts in core tables are ordinary `mark_events` rows (`source = 'dedupe'`), which the core already understands.
+- **Turning it off:** set **View → Enable duplicate detection** off (stored as `feature.dedupe` in `settings`). This takes effect on restart. Nothing else changes; existing marks remain.
+- **Removing it:** delete the two `features/dedupe/` folders and the two registration lines, then add a core migration that runs `DROP TABLE IF EXISTS photo_hashes`.
+- **Cost of turning it off:** without hashes, a moved or renamed file shows up as a new *unreviewed* photo, and its old row is flagged missing. That's acceptable; it's how most simple viewers behave.
+
+### Hashing
+
+- A worker thread streams each file through `crypto.createHash('sha256')` and processes ~4 files in parallel. Hashes are saved as soon as they're computed, so the work can be resumed.
+- A photo needs hashing if it has no `photo_hashes` row, or if the row's size/mtime no longer match `photos`.
+- It runs after the metadata pass, at lower priority. The HUD shows *"Hashing… 3,200 / 8,930"*.
+
+### Move detection (`matchMoves` hook)
+
+- **No missing rows** (always true on a first scan, usually true otherwise): returns nothing right away. There's nothing to match.
+- **Some missing rows that have a hash:** hash only the *new* files whose size equals the size of some missing row. Any new file with the same hash as a missing row is matched to it 1:1 (identical copies can be paired in any order). The core then **moves** that row: it updates `rel_path`/`dir_path`/stats and sets `missing = 0`, so the `id` and `status` are kept.
+- Missing rows that never got a hash can't be matched; the new file becomes a new row. Moves between libraries aren't detected.
+
+### Duplicates
+
+- **Detection:** group non-missing photos in a library by `content_hash`. Any group with more than one photo counts.
+- **The count** is the number of *extra* copies: *"Found 412 duplicate copies of 380 photos."* It's shown only once hashing is complete.
+- **Notification:** a non-blocking banner: *"412 duplicate copies found. [Hide duplicates] [Review] [Dismiss]"*. Dismissing it hides the banner until the count changes. It's also available from the menu at any time.
+- **Hide duplicates:** for each group, one copy stays and the other `unreviewed` copies are marked `meh`. The app picks which copy stays (they're identical) and doesn't ask:
+  - A copy you already marked `like` stays. Explicit marks are **never overridden**; only `unreviewed` rows change.
+  - Otherwise, the copy in the shallowest folder stays, then the one with the shortest path, then the first alphabetically.
+  - If every copy is already `meh`, the group is left alone.
+  - Everything is written in one transaction with a shared `batch_id`, so **`Cmd+Z` undoes the whole operation**. There's one short confirmation: *"Mark 412 extra copies as Meh?"*
+- **In the viewer:** the HUD shows *"1 of 3 copies"* on duplicated photos. `D` lists the other copies' paths and statuses. The *Duplicates* filter (`5`) shows only duplicated photos, with copies sorted next to each other.
+- **Not covered:** near-duplicates (resized or re-saved copies have different bytes) and duplicates across libraries.
+
+---
+
+## 9. IPC API (preload → main)
+
+```ts
+type Sort = 'filename' | 'date' | 'random';
+type Scope = { kind: 'library' } | { kind: 'folder'; dirPath: string };
+type ViewSpec = { libraryId: number; scope: Scope; filter: string; sort: Sort; seed?: number };
+
+interface PhotonicAPI {
+  libraries: {
+    pickAndOpen(): Promise<Library | null>;
+    list(): Promise<Library[]>;
+    open(id: number): Promise<Library>;
+    rescan(id: number): Promise<void>;
+    folders(id: number): Promise<{ dirPath: string; total: number; unreviewed: number }[]>;
+    onProgress(cb: (p: Progress) => void): Unsubscribe;   // scan + metadata (+ feature) progress
+  };
+  photos: {
+    listIds(view: ViewSpec): Promise<number[]>;
+    get(id: number): Promise<PhotoMeta>;   // absPath, relPath, status, displayDate + source, EXIF fields
+    counts(libraryId: number, scope: Scope): Promise<StatusCounts>;
+    revealInFinder(id: number): Promise<void>;
+  };
+  marks: {
+    set(photoId: number, status: Status): Promise<PhotoMeta>;
+    undo(libraryId: number): Promise<{ photoIds: number[] } | null>;  // undoes a whole batch
+  };
+  settings: {
+    get<T>(key: string): Promise<T | null>;
+    set<T>(key: string, value: T): Promise<void>;
+  };
+  features: {
+    enabled(): Promise<string[]>;           // e.g. ['dedupe']; the renderer uses this to load feature UI
+  };
+
+  // Added only when the dedupe feature is registered:
+  duplicates?: {
+    summary(libraryId: number): Promise<{ extraCopies: number; groups: number; hashingDone: boolean }>;
+    copies(photoId: number): Promise<PhotoMeta[]>;
+    hide(libraryId: number): Promise<{ marked: number; batchId: number }>;
+  };
+}
+```
+
+`marks.set` is fast, but the renderer updates the UI right away (optimistically) and doesn't wait for it before moving to the next photo.
+
+---
+
+## 10. Project layout
+
+```
+photonic/
+  package.json
+  electron.vite.config.ts
+  src/
+    main/
+      index.ts              # app lifecycle, window, protocol, feature registration
+      ipc.ts
+      db/
+        index.ts            # open, pragmas, migrate, backup
+        migrations/001_init.sql
+        queries.ts
+      scanner/
+        walk.ts
+        metadataWorker.ts   # EXIF worker thread
+      ordering.ts           # ViewSpec → ordered IDs (natural sort, date, seeded shuffle)
+      photoProtocol.ts
+      features/
+        types.ts            # Feature interface, hook types (core)
+        registry.ts         # (core)
+        dedupe/             # ── removable ──
+          index.ts          # exports the Feature
+          migrations/100_dedupe.sql
+          hashWorker.ts
+          matchMoves.ts
+          duplicates.ts
+    preload/
+      index.ts              # contextBridge → window.photonic
+    renderer/
+      index.html
+      src/
+        App.tsx
+        Viewer.tsx
+        InfoBar.tsx
+        Hud.tsx
+        FolderPicker.tsx
+        useKeyboard.ts      # core key map; features can add keys
+        usePreloader.ts
+        theme/
+          tokens.css        # neutrals, border/shadow/radius, font variables
+          palettes.ts       # 5-color palettes → roles
+          applyTheme.ts     # writes roles to :root, picks text color for each fill
+        components/
+          Button.tsx        # raised button + key cap
+          KeyCap.tsx
+          StatusTag.tsx     # ribbon badge
+          ProgressBar.tsx   # segmented bar
+        features/
+          dedupe/           # ── removable ── banner, copies panel, keys, filter
+    shared/
+      types.ts
+  tests/
+    db.test.ts
+    scanner.test.ts
+    ordering.test.ts
+    palettes.test.ts      # WCAG contrast + like/meh distinctness for every palette
+    features/dedupe/
+      matchMoves.test.ts
+      duplicates.test.ts
+    e2e/
+```
+
+---
+
+## 11. Milestones
+
+**M0 — Scaffold** ✅ *done 2026-11-20*
+- electron-vite + React + TS app that opens a window
+- better-sqlite3 installed and rebuilt for Electron. Startup creates the DB and runs migrations. Daily backup.
+- `Feature` interface and registry, with nothing registered yet
+
+**M1 — Library, scan & metadata**
+- Folder picker, recursive walk with batched upserts, missing-file flagging, progress events
+- EXIF metadata worker (can be resumed) and on-demand reads for the current photo
+- Tests: scanner on a fixture tree (nested folders, hidden files, mixed-case extensions, `.heic`/`.mov` ignored, a symlink); EXIF parsing on sample files with and without EXIF
+
+**M2 — Viewer & navigation**
+- `photo://` protocol with the path check
+- Viewer, `←`/`→`, Home/End, preloading
+- **Info bar** with full path and display date, `C` to copy the path, `O` to show in Finder
+- **Theme foundation** (§12): neutral tokens + palette roles as CSS variables, bundled fonts, `.btn` raised-button style with `.pressed` triggered by the keyboard, the **Arcade** palette as default, and the palette contrast test
+- Last position saved and restored
+
+**M3 — Marking**
+- `↑`/`↓` with jump to the next unreviewed photo, clear, `mark_events`, `Cmd+Z` undo (including batches), repeat-key guard, flash feedback
+- Counts, end-of-list summary screen
+- Tests: status transitions, next-unreviewed jumps, undo order
+
+**M4 — Ordering, scopes & filters**
+- Sort by filename, date and random (seeded, `R` to reshuffle). `S` to cycle.
+- Folder scope and the `G` folder picker
+- Filters 1–4
+- Tests: natural sort, date fallback chain, the same seed always gives the same order, folder scope includes subfolders but not folders that only share a name prefix (`2019` vs `2019-old`)
+
+**M5 — Dedupe feature (optional)**
+- `100_dedupe.sql`, hash worker, `matchMoves` hook, duplicate summary and banner, hide action with batch undo, *Duplicates* filter, copies panel
+- Setting to turn it on or off
+- Tests: rename, move, swapping two files' names, editing in place, moving one of two identical copies; choice of which copy stays; explicit marks never overridden; batch undo restores the exact previous state; **the full core test suite still passes with the feature turned off**
+
+**M6 — Polish**
+- Shortcut overlay, full screen, `Space` zoom, HUD toggle, placeholder for unreadable files
+- Game touches (§12): pixel hearts, shrug wobble, segmented progress bar, "FOLDER CLEAR!" screen; `ui.animations` setting and reduced-motion support
+- All four palettes, **View → Theme** menu, dark mode
+- Library switcher (recent libraries)
+
+**M7 — Packaging**
+- electron-builder macOS build. App icon.
+
+---
+
+## 12. Look & feel
+
+### Direction
+
+**Gumroad's neo-brutalist look, with a bit of 8-bit game character.** That means flat colors, solid black outlines, hard offset shadows with no blur, and buttons that look raised and visibly sink when pressed. The game feel shows up in a few chosen places: the logo, the numbers, the key caps, small celebrations. It doesn't cover the whole app.
+
+Two rules come before everything else:
+
+1. **The photo is the star.** The chrome frames the photo and never competes with it. The area directly behind the photo (the *stage*) is always a **neutral grey, never tinted by the theme**, so the colors around a photo don't change how you judge it.
+2. **The game touches stay small.** One pixel font in a few places, a handful of animations under ~300 ms, and every animation is skipped when macOS *Reduce motion* is on.
+
+### Layout
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ PHOTONIC  │ Library: Photos ▾ │ 2019/Italy ▾ │ Unreviewed ▾ │ Random ▾  │ ← HUD top bar
+├────────────────────────────────────────────────────────────────────────┤
+│  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓  │
+│  ┃                                                                ┃  │
+│  ┃               photo on a neutral grey stage                    ┃  │ ← thick ink border,
+│  ┃                                                                ┃  │   like a game screen
+│  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛  │
+├────────────────────────────────────────────────────────────────────────┤
+│ /Users/me/Pictures/Photos/2019/Italy/IMG_2231.jpg   Taken 2019-07-04 14:32 │ ← info bar (always)
+├────────────────────────────────────────────────────────────────────────┤
+│ [←]  [ ¯\_(ツ)_/¯  Meh  ↓ ]  [ ⸜(｡˃ ᵕ ˂ )⸝♡  Like  ↑ ]  [→]     1,204 / 8,930  ▰▰▰▰▰▱▱▱ │ ← toolbar
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+- Background ("paper"): a warm off-white like Gumroad's. All panels have **2px ink borders**.
+- In full screen, the top bar and toolbar slide away. The info bar stays as a slim strip.
+
+### Raised buttons
+
+```css
+.btn {
+  background: var(--btn-bg);
+  color: var(--btn-ink);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);                 /* small: 4px */
+  box-shadow: var(--lift) var(--lift) 0 var(--ink);   /* hard shadow, no blur */
+  transition: transform 60ms ease-out, box-shadow 60ms ease-out;
+}
+.btn:hover               { transform: translate(-1px, -1px);
+                           box-shadow: calc(var(--lift) + 1px) calc(var(--lift) + 1px) 0 var(--ink); }
+.btn:active, .btn.pressed { transform: translate(var(--lift), var(--lift));
+                           box-shadow: 0 0 0 var(--ink); }   /* sinks flat */
+```
+
+- **The keyboard presses the buttons on screen.** When you hit `↑`, the Like button gets the `.pressed` class for ~120 ms and visibly sinks, exactly as if you'd clicked it. This links the keyboard to the screen and makes the raised-button style useful, not just decoration.
+- Each button shows its key as a small **key cap**: a tiny raised box in the pixel font (`↑`, `↓`, `G`…). The shortcut overlay (`?`) uses the same key caps.
+- The status badge is a little **ribbon tag**, like Gumroad's notched price tag, filled with the status color: `⸜(｡˃ ᵕ ˂ )⸝♡ LIKE` or `¯\_(ツ)_/¯ MEH`.
+
+### Game touches (small, on purpose)
+
+| Where | What |
+|---|---|
+| Logo | "PHOTONIC" in the pixel font, with a 2px hard shadow in the accent color |
+| Like | A few **pixel hearts** pop up from the button and fade (~300 ms) |
+| Meh | The ribbon tag gives a small sideways **shrug wobble** |
+| Progress | A chunky **segmented bar** (like a health or XP bar) showing how much of the current view has been reviewed |
+| Numbers | Position counter and counts in the pixel font, at sizes where it renders crisply |
+| End of list | **"FOLDER CLEAR!"** (or "LIBRARY CLEAR!") in the pixel font, with the Like/Meh counts below it like an end-of-level score |
+| Sounds | None for now. 8-bit blips could be an option later, **off by default**. |
+
+All of these sit behind one `ui.animations` setting, and are off whenever `prefers-reduced-motion` is set.
+
+### Typography
+
+Three fonts, all **bundled with the app** (it works offline, so nothing loads from a CDN). DM Sans and Space Mono come from `@fontsource/*` packages. Monocraft's font file is copied from its GitHub release into `src/renderer/src/assets/fonts/`, together with its license file.
+
+| Role | Font | Used for |
+|---|---|---|
+| **Pixel** (accent) | **Monocraft** (SIL Open Font License) | Logo, key caps, counters, end-screen title. **Nowhere else.** Minecraft-inspired, with none of the licensing worries. |
+| **UI** | **DM Sans** (OFL) | Everything else: menus, buttons, banners. A clean, slightly rounded geometric sans that's close to the Gumroad screenshot. It stays out of the way, which lets Monocraft be the font with personality. |
+| **Data** | **Space Mono** (OFL) | The full path and the date in the info bar, plus EXIF details. Monospace makes paths easy to scan, and its quirky shapes add a bit of character without being pixelated. |
+
+- **Why not the dafont Minecraft font:** its license would need checking before bundling it in an app, and it's closely tied to Mojang's game. Monocraft gives the same feel under an open license.
+- Each role is a single CSS variable (`--font-pixel`, `--font-ui`, `--font-data`), so trying a different font for any role means changing one line.
+- Pixel fonts only look crisp at whole-number multiples of their design size. The CSS sets those sizes explicitly, and uses `-webkit-font-smoothing: none` for pixel text only.
+
+### Theme system (easy to swap)
+
+Colors come in two layers, so a new palette is just 5 hex codes:
+
+1. **Neutrals**, fixed per light/dark mode and not part of the palette: `--paper`, `--surface`, `--ink`, `--muted`, `--stage`.
+2. **Palette roles**, filled from a 5-color Coolors palette: `--accent` (main buttons, logo shadow), `--like`, `--meh`, `--highlight` (focus rings, progress bar), `--info` (banners).
+
+```ts
+// src/renderer/src/theme/palettes.ts
+export const PALETTES = {
+  arcade: {
+    name: 'Arcade',
+    source: 'https://coolors.co/ef476f-ffd166-06d6a0-118ab2-073b4c',
+    roles: { accent: '#FFD166', like: '#EF476F', meh: '#118AB2', highlight: '#06D6A0', info: '#073B4C' },
+  },
+  // ...
+} satisfies Record<string, Palette>;
+```
+
+- At startup, and whenever the theme changes, the app writes the roles to CSS custom properties on `:root`. **Components only ever use the `var(--…)` names**, never hex values.
+- Text color on each colored fill is computed: ink or paper, whichever has more contrast. A palette can override it per role.
+- **A unit test checks every palette:** text on every role color must meet **WCAG AA contrast (4.5:1)**, and `like` and `meh` must be clearly different from each other. A pasted-in palette that fails gets caught in CI, not by squinting.
+- **View → Theme ▸** lists the palettes and switches live. The choice is saved as `ui.theme`. Light/dark follows macOS by default and can be overridden.
+- **Dark mode:** paper becomes near-black and ink becomes cream. Hard shadows use a darker step of the paper color instead of pure black, so they still read as depth.
+
+### Palette options
+
+These are popular, long-running palettes from Coolors' trending list. (I picked them from memory, not from the live trending page, which changes daily. Any palette from there can be added later by pasting its 5 hex codes.)
+
+| Option | Colors | Character | Role mapping |
+|---|---|---|---|
+| **Arcade** *(default)* | `EF476F` `FFD166` `06D6A0` `118AB2` `073B4C` | Bright and game-like, closest to the video-game feel | accent yellow, like pink-red ♡, meh blue, highlight green, info deep teal |
+| **Desert Sunset** | `264653` `2A9D8F` `E9C46A` `F4A261` `E76F51` | Warm and grown-up; the most popular palette on the site | accent saffron, like burnt orange, meh slate, highlight teal, info sandy |
+| **Pastel Pop** | `CDB4DB` `FFC8DD` `FFAFCC` `BDE0FE` `A2D2FF` | Soft, closest to Gumroad's pink, but with **blue buttons** | accent sky blue, like pink, meh lavender, highlight baby blue, info light pink |
+| **Olive Grove** | `606C38` `283618` `FEFAE0` `DDA15E` `BC6C25` | Earthy and calm. Its cream works as the paper color. | accent tan, like copper, meh olive, highlight tan, info forest (paper `FEFAE0`, ink `283618`) |
+
+**Why Arcade is the default:** it's the most "video game" of the four, yellow buttons with black borders pop the way Gumroad's pink ones do, and pink-red is an obvious match for the ♡ on Like. Its blue for Meh is cool and calm, which fits "shrug" without suggesting anything bad is happening to the photo.
+
+---
+
+## 13. Later (not in this plan yet)
+
+- **Export Liked photos** (for ordering prints) and **playlists**. Details to be worked out later. One rule to follow now so both stay easy: **`photos.listIds(view)` stays the only place that decides which photos are in a view**, so a future action can take a `ViewSpec` (or a playlist) and get its photos the same way the viewer does.
+- **Playlists:** `playlists(id, name, created_at)` and `playlist_items(playlist_id, photo_id, position)`, viewed with the same viewer.
+- Thumbnail grid view, a full EXIF info panel, near-duplicate detection (perceptual hashes), optional 8-bit sounds.
+
+---
+
+## 14. Open questions
+
+1. ~~Palette~~: **decided: Arcade is the default.** The other three ship as options.
+2. ~~UI font~~: **decided: DM Sans** for now. It can be swapped with one line later (`--font-ui`).
