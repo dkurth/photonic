@@ -287,18 +287,47 @@ try {
 
     // ---- M4: filters, sort orders, folder scopes ----
     const position = () => text(win, 'position')
-    const checked = (id) => win.getByTestId(`filter-${id}`).getAttribute('aria-checked')
+    const current = () => win.getByTestId('filter').getAttribute('data-filter')
 
     await step('filters 1–4 switch between All / Unreviewed / Like / Meh', async () => {
       await win.keyboard.press('3')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '1 / 1')
       await waitPath(win, 'beach.png')
-      assert.equal(await checked('like'), 'true')
+      assert.equal(await current(), 'like')
       await win.keyboard.press('4')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 3'))
       await win.keyboard.press('1')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
-      assert.equal(await checked('all'), 'true')
+      assert.equal(await current(), 'all')
+    })
+
+    await step('the filter dropdown shows the current filter and switches by click, arrows or number', async () => {
+      assert.match(await text(win, 'filter'), /^All\s*▾$/)
+      await win.getByTestId('filter').click()
+      const list = win.getByRole('listbox', { name: 'Filter' })
+      await list.waitFor()
+      // every filter is listed with its key, and the core ones with counts
+      assert.equal(await list.getByRole('option').count(), 5)
+      assert.match(await win.getByTestId('filter-option-like').innerText(), /3\s+Like\s+1/)
+      await shot(win, 'filter-dropdown')
+      await win.keyboard.press('ArrowDown') // All → Unreviewed
+      await win.keyboard.press('Enter')
+      await list.waitFor({ state: 'detached' })
+      assert.equal(await current(), 'unreviewed')
+      await win.getByTestId('filter').click()
+      await win.getByTestId('filter-option-meh').click()
+      await win.waitForFunction(() => document.querySelector('[data-testid=filter]')?.dataset.filter === 'meh')
+      await win.getByTestId('filter').click()
+      await list.waitFor()
+      await win.keyboard.press('Escape') // closes without changing anything
+      await list.waitFor({ state: 'detached' })
+      assert.equal(await current(), 'meh')
+      await win.getByTestId('filter').click()
+      await win.keyboard.press('1') // number keys work inside the menu too
+      await list.waitFor({ state: 'detached' })
+      assert.equal(await current(), 'all')
+      await win.keyboard.press('ArrowRight') // and the viewer's keys are back
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.startsWith('2 /'))
     })
 
     await step('S cycles Filename → Date → Random; R reshuffles', async () => {
@@ -393,7 +422,7 @@ try {
     const { app, win } = await launch()
     await step('…and the view (scope, filter, sort) is restored on the next launch', async () => {
       await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('2020'))
-      assert.equal(await win.getByTestId('filter-like').getAttribute('aria-checked'), 'true')
+      assert.equal(await win.getByTestId('filter').getAttribute('data-filter'), 'like')
       assert.match(await text(win, 'sort'), /^Date/)
       await waitPath(win, 'beach.png')
     })
@@ -618,8 +647,10 @@ try {
     await step(
       'dedupe off: the app works without it — no Duplicates filter, no badge, renames become new photos',
       async () => {
-        await win.getByTestId('filter-unreviewed').waitFor()
-        assert.equal(await win.getByTestId('filter-duplicates').count(), 0)
+        await win.getByTestId('filter').click()
+        await win.getByTestId('filter-option-unreviewed').waitFor()
+        assert.equal(await win.getByTestId('filter-option-duplicates').count(), 0)
+        await win.keyboard.press('Escape')
         assert.deepEqual(await win.evaluate(() => window.photonic.features.enabled()), [])
         await waitPath(win, '.jpg')
         assert.equal(await win.getByTestId('copies-badge').count(), 0)

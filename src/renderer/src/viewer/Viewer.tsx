@@ -64,6 +64,7 @@ export function Viewer({
   const [flash, setFlash] = useState<Flash | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [featureModal, setFeatureModal] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
@@ -372,7 +373,7 @@ export function Viewer({
       // 1–4 for the core filters, then any filters added by features (e.g. 5 = Duplicates)
       ...Object.fromEntries(filters.map((f) => [f.key, () => setFilter(f.id)]))
     },
-    !pickerOpen && !featureModal && !shortcutsOpen
+    !pickerOpen && !featureModal && !shortcutsOpen && !filterMenuOpen
   )
   useKeyboard({ Escape: () => setShortcutsOpen(false), '?': () => setShortcutsOpen(false) }, shortcutsOpen)
 
@@ -435,6 +436,9 @@ export function Viewer({
             <ViewControls
               view={view}
               filters={filters}
+              counts={counts}
+              filterMenuOpen={filterMenuOpen}
+              onFilterMenu={setFilterMenuOpen}
               pressed={pressed}
               onScope={() => setPickerOpen(true)}
               onFilter={setFilter}
