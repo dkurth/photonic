@@ -15,6 +15,13 @@ const EXIF_JPEG = Buffer.from(
 const APP1 = EXIF_JPEG.subarray(2, EXIF_JPEG.length - 2) // strip SOI and EOI
 
 const tmp = mkdtempSync(join(tmpdir(), 'photonic-e2e-'))
+
+/** Launches the dev build (`.`), or a packaged app when E2E_EXECUTABLE points at its binary. */
+const launchWith = (dataDir) =>
+  _electron.launch({
+    ...(process.env.E2E_EXECUTABLE ? { executablePath: process.env.E2E_EXECUTABLE, args: [] } : { args: ['.'] }),
+    env: { ...process.env, PHOTONIC_USER_DATA: dataDir }
+  })
 const userData = join(tmp, 'userdata')
 const photos = join(tmp, 'My Photos')
 const shots = process.env.E2E_SCREENSHOTS
@@ -26,7 +33,7 @@ function write(rel, content) {
 }
 
 async function launch() {
-  const app = await _electron.launch({ args: ['.'], env: { ...process.env, PHOTONIC_USER_DATA: userData } })
+  const app = await launchWith(userData)
   const win = await app.firstWindow()
   await win.setViewportSize({ width: 1280, height: 800 })
   return { app, win }
@@ -88,7 +95,7 @@ try {
   // ------------------------------------------------------------------ run 0
   await step('quitting immediately after launch exits cleanly (no hang)', async () => {
     const quick = mkdtempSync(join(tmpdir(), 'photonic-e2e-quick-'))
-    const app = await _electron.launch({ args: ['.'], env: { ...process.env, PHOTONIC_USER_DATA: quick } })
+    const app = await launchWith(quick)
     await app.firstWindow()
     const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('app.close() hung')), 10_000))
     try {
@@ -497,7 +504,7 @@ try {
   const dupData = join(tmp, 'userdata-dupes')
   const dupes = join(tmp, 'Dupes')
   const launchDupes = async () => {
-    const app = await _electron.launch({ args: ['.'], env: { ...process.env, PHOTONIC_USER_DATA: dupData } })
+    const app = await launchWith(dupData)
     const win = await app.firstWindow()
     await win.setViewportSize({ width: 1280, height: 800 })
     return { app, win }

@@ -1,0 +1,29 @@
+# Packaging (PLAN.md M7). Build with: npm run dist
+appId: app.photonic.desktop
+productName: Photonic
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  # better-sqlite3 ships prebuilt binaries for every platform plus its C sources; keep only ours.
+  - '!node_modules/better-sqlite3/prebuilds/{win32,linux,linuxmusl}-*'
+  - '!node_modules/better-sqlite3/{src,deps,build}/**'
+  - '!node_modules/node-addon-api/**'
+asar: true
+# Native module (better-sqlite3) must live outside the asar archive.
+asarUnpack:
+  - '**/*.node'
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.photography
+  icon: build/icon.png
+  # Ad-hoc signature: enough to run locally on Apple Silicon. Distribution would need a
+  # Developer ID identity + notarization.
+  identity: '-'
+  hardenedRuntime: false
+dmg:
+  title: Photonic
