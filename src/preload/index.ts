@@ -11,9 +11,6 @@ function on<T>(channel: string, cb: (v: T) => void): () => void {
 const api: PhotonicAPI = {
   app: {
     info: () => ipcRenderer.invoke('app:info'),
-    toggleFullScreen: () => ipcRenderer.invoke('app:toggleFullScreen'),
-    isFullScreen: () => ipcRenderer.invoke('app:isFullScreen'),
-    onFullScreen: (cb) => on<boolean>('fullscreen', cb),
     ui: () => ipcRenderer.invoke('app:ui'),
     onUiChanged: (cb) => on<UiSettings>('ui:changed', cb)
   },
@@ -41,6 +38,11 @@ const api: PhotonicAPI = {
   marks: {
     set: (photoId, status) => ipcRenderer.invoke('marks:set', photoId, status),
     undo: (libraryId) => ipcRenderer.invoke('marks:undo', libraryId)
+  },
+  folders: {
+    resolve: (libraryId, path) => ipcRenderer.invoke('folders:resolve', libraryId, path),
+    pick: (libraryId) => ipcRenderer.invoke('folders:pick', libraryId),
+    mark: (libraryId, dirPath, status, mode) => ipcRenderer.invoke('folders:mark', libraryId, dirPath, status, mode)
   },
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),

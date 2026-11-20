@@ -32,7 +32,7 @@ export const CORE_SHORTCUTS: ShortcutGroup[] = [
     items: [
       { keys: ['C'], label: 'Copy full path' },
       { keys: ['O'], label: 'Show in Finder' },
-      { keys: ['F'], label: 'Full screen' },
+      { keys: ['F'], label: 'Like / Meh a whole folder' },
       { keys: ['H'], label: 'Hide / show toolbars' },
       { keys: ['⌘O'], label: 'Open a folder' },
       { keys: ['⌘L'], label: 'Switch library' },

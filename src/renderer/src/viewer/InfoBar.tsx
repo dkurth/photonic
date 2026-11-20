@@ -27,7 +27,6 @@ export function InfoBar({
       </div>
       <div className="date" data-testid="date">
         {date?.label}
-        {date?.note && <span className="note"> · {date.note}</span>}
         {badges}
       </div>
       <div className="infobar-actions">

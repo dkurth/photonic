@@ -45,6 +45,8 @@ function createWindow(): void {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     title: 'Photonic',
+    // No full-screen mode; the green window button zooms instead.
+    fullscreenable: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -54,8 +56,6 @@ function createWindow(): void {
   })
 
   win.once('ready-to-show', () => win.show())
-  win.on('enter-full-screen', () => win.webContents.send('fullscreen', true))
-  win.on('leave-full-screen', () => win.webContents.send('fullscreen', false))
 
   // Never navigate the app window away; open external links in the browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {

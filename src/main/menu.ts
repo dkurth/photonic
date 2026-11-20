@@ -70,7 +70,6 @@ export function buildMenu(opts: MenuOptions): void {
     {
       label: 'View',
       submenu: [
-        { role: 'togglefullscreen' },
         {
           label: 'Keyboard Shortcuts',
           accelerator: 'Shift+/',

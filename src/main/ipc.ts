@@ -6,6 +6,7 @@ import { listBackups } from './db/backup'
 import type { FeatureRegistry } from './features/registry'
 import type { IpcRegistrar } from './features/types'
 import { addLibrary, getLibraryRow, libraryStats, listLibraries, toLibrary } from './library'
+import { markFolder, resolveFolder } from './folderMarks'
 import { isStatus, setStatus, undoLast } from './marks'
 import { listIds, listPhotos, statusCounts } from './ordering'
 import { getPhotoRow, toPhotoMeta } from './photos'
@@ -78,14 +79,6 @@ export function registerCoreIpc(ctx: {
     }
   })
 
-  handle('app:toggleFullScreen', () => {
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-    win?.setFullScreen(!win.isFullScreen())
-  })
-  handle(
-    'app:isFullScreen',
-    () => (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.isFullScreen() ?? false
-  )
   handle('app:ui', () => readUi(db))
 
   handle('libraries:pickAndOpen', async () => {
@@ -146,6 +139,30 @@ export function registerCoreIpc(ctx: {
   })
 
   handle('features:enabled', () => ctx.features.names())
+
+  handle('folders:resolve', (libraryId, path) => {
+    if (typeof path !== 'string' || path.length > 4096) throw new Error('Invalid path')
+    return resolveFolder(db, id(libraryId), path, vis)
+  })
+
+  handle('folders:pick', async (libraryId) => {
+    const lib = getLibraryRow(db, id(libraryId))
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const opts = {
+      title: 'Choose a folder to Like or Meh',
+      defaultPath: lib?.root_path,
+      properties: ['openDirectory' as const]
+    }
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    return res.canceled ? null : (res.filePaths[0] ?? null)
+  })
+
+  handle('folders:mark', (libraryId, dirPath, status, mode) => {
+    if (typeof dirPath !== 'string') throw new Error('Invalid folder')
+    if (status !== 'like' && status !== 'meh') throw new Error('Invalid status')
+    if (mode !== 'all' && mode !== 'unreviewed') throw new Error('Invalid mode')
+    return markFolder(db, id(libraryId), dirPath, status, mode, vis)
+  })
 
   handle('settings:get', (key) => getSetting(db, str(key, 'key')))
   handle('settings:set', (key, value) => setSetting(db, str(key, 'key'), value))

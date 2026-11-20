@@ -71,6 +71,17 @@ export interface ScanProgress {
 
 export type Unsubscribe = () => void
 
+/** A folder of the library chosen for "Like / Meh a whole folder", with its photo counts (subfolders included). */
+export interface FolderTarget {
+  /** Relative to the library root ('' = the root itself). */
+  dirPath: string
+  absPath: string
+  total: number
+  unreviewed: number
+  like: number
+  meh: number
+}
+
 export type Appearance = 'system' | 'light' | 'dark'
 
 /** UI preferences (set from the View menu). */
@@ -146,9 +157,6 @@ export interface PhotoMeta {
 export interface PhotonicAPI {
   app: {
     info(): Promise<AppInfo>
-    toggleFullScreen(): Promise<void>
-    isFullScreen(): Promise<boolean>
-    onFullScreen(cb: (on: boolean) => void): Unsubscribe
     ui(): Promise<UiSettings>
     /** Fires when a UI setting changes from the menu. */
     onUiChanged(cb: (ui: UiSettings) => void): Unsubscribe
@@ -181,6 +189,19 @@ export interface PhotonicAPI {
     set(photoId: number, status: Status): Promise<PhotoMeta | null>
     /** Undoes the most recent change in the library — a whole batch if it was a bulk action. */
     undo(libraryId: number): Promise<UndoResult | null>
+  }
+  folders: {
+    /** Resolves a typed path (absolute, relative to the library, or ~/…) to a folder of the library. */
+    resolve(libraryId: number, path: string): Promise<FolderTarget | { error: string }>
+    /** Native folder chooser, starting at the library root. Returns the chosen path. */
+    pick(libraryId: number): Promise<string | null>
+    /** Likes or Mehs the folder's photos as one undoable batch ('unreviewed' = only unmarked ones). */
+    mark(
+      libraryId: number,
+      dirPath: string,
+      status: 'like' | 'meh',
+      mode: 'all' | 'unreviewed'
+    ): Promise<{ changed: number; batchId: number | null }>
   }
   settings: {
     get<T>(key: string): Promise<T | null>

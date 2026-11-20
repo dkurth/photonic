@@ -3,6 +3,7 @@ import type { Filter, Library, PhotoMeta, ScanPhase, ScanProgress, Status, Statu
 import { useKeyboard } from '../hooks/useKeyboard'
 import { usePressed } from '../hooks/usePressed'
 import { DoneScreen } from './DoneScreen'
+import { FolderMarkDialog } from './FolderMarkDialog'
 import { ShortcutsOverlay } from './ShortcutsOverlay'
 import { fmtNumber } from './format'
 import { InfoBar } from './InfoBar'
@@ -53,18 +54,10 @@ export function Viewer({
   const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [featureModal, setFeatureModal] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
+  const [folderDialog, setFolderDialog] = useState(false)
   const [hudHidden, setHudHidden] = useState(false)
   const [zoomed, setZoomed] = useState(false)
 
-  // Full screen hides the toolbars (H brings them back); the info bar always stays (PLAN.md §7).
-  useEffect(() => {
-    void api.app.isFullScreen().then(setFullscreen)
-    return api.app.onFullScreen((on) => {
-      setFullscreen(on)
-      setHudHidden(on)
-    })
-  }, [api])
   const filters = useMemo(() => [...FILTERS, ...features.flatMap((f) => f.filters ?? [])], [features])
   const [pressed, press] = usePressed()
 
@@ -351,14 +344,14 @@ export function Viewer({
       o: reveal,
       s: cycleSort,
       r: reshuffle,
-      f: () => void api.app.toggleFullScreen(),
       h: () => setHudHidden((x) => !x),
+      f: () => setFolderDialog(true),
       ' ': () => setZoomed((z) => !z),
       '?': () => setShortcutsOpen(true),
       // 1–4 for the core filters, then any filters added by features (e.g. 5 = Duplicates)
       ...Object.fromEntries(filters.map((f) => [f.key, () => setFilter(f.id)]))
     },
-    !featureModal && !shortcutsOpen && !filterMenuOpen
+    !featureModal && !shortcutsOpen && !filterMenuOpen && !folderDialog
   )
   useKeyboard({ Escape: () => setShortcutsOpen(false), '?': () => setShortcutsOpen(false) }, shortcutsOpen)
 
@@ -407,7 +400,7 @@ export function Viewer({
   }
 
   return (
-    <div className={`viewer ${hudHidden ? 'hud-hidden' : ''} ${fullscreen ? 'fullscreen' : ''}`}>
+    <div className={`viewer ${hudHidden ? 'hud-hidden' : ''}`}>
       <TopBar
         library={library}
         progress={progress}
@@ -456,6 +449,23 @@ export function Viewer({
         onMeh={() => void mark('meh')}
       />
       {featureCtx && features.map((f) => f.Layer && <f.Layer key={f.name} ctx={featureCtx} />)}
+      {folderDialog && (
+        <FolderMarkDialog
+          libraryId={library.id}
+          initialPath={meta ? meta.absPath.slice(0, meta.absPath.lastIndexOf('/')) : library.rootPath}
+          onClose={() => setFolderDialog(false)}
+          onDone={({ changed, status }) => {
+            setFolderDialog(false)
+            setDone(false)
+            void reload()
+            flashToast(
+              changed
+                ? `Marked ${fmtNumber(changed)} ${changed === 1 ? 'photo' : 'photos'} ${status === 'like' ? 'Like' : 'Meh'} — ⌘Z to undo`
+                : 'Nothing to change'
+            )
+          }}
+        />
+      )}
       {shortcutsOpen && (
         <ShortcutsOverlay extra={features.flatMap((f) => f.shortcuts ?? [])} onClose={() => setShortcutsOpen(false)} />
       )}

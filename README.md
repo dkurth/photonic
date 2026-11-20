@@ -16,7 +16,8 @@ See [PLAN.md](PLAN.md) for the full design and milestone notes.
 | `S` / `R` | Order: filename → date → random / reshuffle |
 | `Space` | Zoom to 100% (drag to pan) |
 | `C` / `O` | Copy the full path / show in Finder |
-| `F` / `H` | Full screen / hide toolbars |
+| `F` | Like or Meh a whole folder |
+| `H` | Hide toolbars |
 | `?` | All shortcuts |
 
 The **View** menu has the theme (4 palettes), light/dark, animations, and the **Duplicate Detection** toggle.

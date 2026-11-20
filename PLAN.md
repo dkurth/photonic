@@ -3,6 +3,7 @@
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
 Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
+- v1.5: **Like / Meh a whole folder** (`F`): type a folder path (absolute, relative to the library, or `~/…`) or browse, see how many photos it holds (subfolders included), then Meh / Like / Cancel. If photos carry the opposite mark, it asks first: *"20 photos in that folder are marked Like. Do you want to overwrite that?"* → *Meh them all* / *Meh only the unreviewed ones*. One batch, so one ⌘Z undoes it. **Full-screen mode removed** (the window isn't fullscreenable; `F` is reused). The date no longer adds "· no EXIF date".
 - v1.4: First / last photo buttons (⏮ ⏭, icon-only pixel art) beside Prev / Next. Home / End push them.
 - v1.3: **Folder scopes removed** (the `G` picker and "Entire library" chip). To review one folder on its own, open it as its own library. Views are now just filter + sort, counts are per library, and the random seed is one per library.
 - v1.2: "Hide duplicates" **hides** the extra copies from review instead of marking them Meh (a duplicate isn't a judgement about the photo). Migration 003 adds `photos.hidden`/`hidden_reason` and generalizes the undo log. Hidden copies keep their marks, show up only under Duplicates, and come back with ⌘Z or when the feature is turned off.
@@ -70,7 +71,7 @@ Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
 | `C` | Copy the full path to the clipboard |
 | `O` | Show the file in Finder |
 | `Space` | Toggle between fit-to-window and 100% zoom (drag to pan), for checking sharpness |
-| `F` | Toggle full screen |
+| `F` | Like or Meh a whole folder (type or browse to a path; asks before overwriting the opposite mark) |
 | `H` | Hide or show the *extra* HUD (counts, toolbar). The path and date stay visible. |
 | `?` | Show the shortcut overlay |
 
@@ -230,7 +231,7 @@ export const STATUS_LABELS = {
 
 The emoticons appear on the toolbar buttons, the status badge, the mark flash, and the filter names. Make sure the app's font can draw `⸜ ⸝ ᵕ ˃ ˂ ツ`; the macOS system font can.
 
-**Display date** (used in the info bar and for date sorting): `taken_at`, otherwise `birthtime_ms`, otherwise `mtime_ms`. The UI labels which one it is (e.g. *"Taken 2019-07-04 14:32"* vs *"File created 2021-01-10 (no EXIF date)"*).
+**Display date** (used in the info bar and for date sorting): `taken_at`, otherwise `birthtime_ms`, otherwise `mtime_ms`. The UI labels which one it is (e.g. *"Taken 2019-07-04 14:32"* vs *"File created 2021-01-10 09:12"*).
 
 ---
 
@@ -303,7 +304,7 @@ What you're viewing is defined by two settings, stored per library in `settings`
 
 ### Info bar (always visible, `H` doesn't hide it)
 
-A strip along the bottom edge, also shown in full screen:
+A strip along the bottom edge, also shown when the toolbars are hidden (`H`):
 - **Full absolute path:** `root_path + rel_path`. Long paths wrap onto a second line instead of being cut off. The text can be selected, and `C` copies it.
 - **Date:** the display date with its source label (§5).
 - Status badge and position (`1,204 / 8,930`).
@@ -532,7 +533,7 @@ photonic/
 - Tests: rename, move, swapping two files' names, editing in place, moving one of two identical copies; choice of which copy stays; explicit marks never overridden; batch undo restores the exact previous state; **the full core test suite still passes with the feature turned off**
 
 **M6 — Polish** ✅ *done 2026-11-20*
-- Shortcut overlay, full screen, `Space` zoom, HUD toggle, placeholder for unreadable files
+- Shortcut overlay, `Space` zoom, HUD toggle, placeholder for unreadable files
 - Game touches (§12): pixel hearts, shrug wobble, segmented progress bar, "FOLDER CLEAR!" screen; `ui.animations` setting and reduced-motion support
 - All four palettes, **View → Theme** menu, dark mode
 - Library switcher (recent libraries)
@@ -572,7 +573,7 @@ Two rules come before everything else:
 ```
 
 - Background ("paper"): a warm off-white like Gumroad's. All panels have **2px ink borders**.
-- In full screen, the top bar and toolbar slide away. The info bar stays as a slim strip.
+- `H` hides the top bar and toolbar. The info bar stays as a slim strip.
 
 ### Raised buttons
 

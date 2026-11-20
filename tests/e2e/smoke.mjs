@@ -166,7 +166,7 @@ try {
     await step('photos without EXIF fall back to the file date, labelled', async () => {
       await win.keyboard.press('End')
       await win.waitForFunction(() => document.querySelector('[data-testid=path]')?.textContent.endsWith('beach.png'))
-      assert.match(await text(win, 'date'), /^File created \d{4}-\d\d-\d\d \d\d:\d\d · no EXIF date$/)
+      assert.match(await text(win, 'date'), /^File created \d{4}-\d\d-\d\d \d\d:\d\d$/) // no 'no EXIF date' note
       await win.keyboard.press('Home')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '1 / 5')
       await win.keyboard.press('ArrowLeft') // already at the start: stays
@@ -455,20 +455,16 @@ try {
       await win.locator('.zoom-badge').waitFor({ state: 'detached' })
     })
 
-    await step('F enters full screen (toolbars hide), F again leaves', async () => {
-      const isFs = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())
+    await step('there is no full-screen mode (F opens the folder dialog instead)', async () => {
+      assert.equal(
+        await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreenable()),
+        false
+      )
       await win.keyboard.press('f')
-      await win.waitForFunction(() => document.querySelector('.viewer')?.classList.contains('fullscreen'), null, {
-        timeout: 10_000
-      })
-      assert.equal(await isFs(), true)
-      assert.equal(await win.locator('.viewer').evaluate((el) => el.classList.contains('hud-hidden')), true)
-      await win.waitForTimeout(800) // let the macOS full-screen animation settle
-      await win.keyboard.press('f')
-      await win.waitForFunction(() => !document.querySelector('.viewer')?.classList.contains('fullscreen'), null, {
-        timeout: 10_000
-      })
-      await win.waitForTimeout(800)
+      const dlg = win.getByRole('dialog', { name: 'Like or Meh a folder' })
+      await dlg.waitFor()
+      await win.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'detached' })
     })
 
     await step('View → Theme switches palettes live; Appearance → Dark; Animations off', async () => {
@@ -638,6 +634,73 @@ try {
       const s = await stats(win)
       assert.equal(s.missing, 0)
       assert.equal(s.like, 1)
+    })
+
+    // ---- Like / Meh a whole folder (F) ----
+    const folderDialog = () => win.getByRole('dialog', { name: 'Like or Meh a folder' })
+    const openFolderDialog = async (path) => {
+      await win.keyboard.press('f')
+      await folderDialog().waitFor()
+      await win.getByTestId('folder-path').fill(path)
+    }
+
+    await step('F: type a folder path, see how many photos it has, ↓ Mehs them all', async () => {
+      await openFolderDialog(join(dupes, 'copies'))
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=folder-summary]')?.textContent.startsWith('2 photos in this folder')
+      )
+      await shot(win, 'folder-dialog')
+      await win.keyboard.press('ArrowDown') // Meh, straight from the path field
+      await folderDialog().waitFor({ state: 'detached' })
+      await win.waitForSelector('text=Marked 2 photos Meh')
+      assert.equal((await dupStats(win)).meh, 2)
+    })
+
+    await step('F: marking over the opposite mark asks first (only-unreviewed / all)', async () => {
+      await openFolderDialog(join(dupes, 'copies'))
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=folder-summary]')?.textContent.includes('2 Meh')
+      )
+      await folderDialog().getByRole('button', { name: /Like/ }).click()
+      await win.getByTestId('folder-confirm').waitFor()
+      assert.match(
+        await text(win, 'folder-confirm'),
+        /^2 photos in that folder are marked Meh\. Do you want to overwrite that\?$/
+      )
+      await shot(win, 'folder-confirm')
+      await win.keyboard.press('u') // Like only the unreviewed ones: there are none
+      await win.waitForSelector('text=Nothing to change')
+      assert.equal((await dupStats(win)).meh, 2)
+
+      await openFolderDialog(join(dupes, 'copies'))
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=folder-summary]')?.textContent.includes('2 Meh')
+      )
+      await win.keyboard.press('ArrowUp')
+      await win.getByTestId('folder-confirm').waitFor()
+      await folderDialog().getByRole('button', { name: 'Like them all' }).click()
+      await win.waitForSelector('text=Marked 2 photos Like')
+      const s = await dupStats(win)
+      assert.equal(s.meh, 0)
+      assert.equal(s.like, 3) // + c-renamed.jpg from before
+    })
+
+    await step('F: one ⌘Z undoes the whole folder', async () => {
+      await win.keyboard.press('Meta+z')
+      await win.waitForSelector('text=Undid 2 changes')
+      const s = await dupStats(win)
+      assert.equal(s.meh, 2)
+      assert.equal(s.like, 1)
+    })
+
+    await step('F: a folder outside the library is refused', async () => {
+      await openFolderDialog(tmp)
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=folder-summary]')?.textContent.includes("isn't inside this library")
+      )
+      assert.equal(await folderDialog().getByRole('button', { name: /Like/ }).isDisabled(), true)
+      await win.keyboard.press('Escape')
+      await folderDialog().waitFor({ state: 'detached' })
     })
 
     await step('dedupe: Dismiss hides the banner', async () => {
