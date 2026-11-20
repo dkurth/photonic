@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { PhotonicAPI, ScanProgress, UiSettings } from '@shared/types'
+import type { ExportProgress, PhotonicAPI, ScanProgress, UiSettings } from '@shared/types'
 
 /** Subscribes to a main → renderer event; returns an unsubscribe function. */
 function on<T>(channel: string, cb: (v: T) => void): () => void {
@@ -53,6 +53,14 @@ const api: PhotonicAPI = {
     resetShortcuts: (systemKeys) => ipcRenderer.invoke('playlists:resetShortcuts', systemKeys),
     remove: (id, moveTo) => ipcRenderer.invoke('playlists:remove', id, moveTo),
     onChanged: (cb) => on<void>('playlists:changed', () => cb())
+  },
+  exports: {
+    pickFolder: () => ipcRenderer.invoke('exports:pickFolder'),
+    count: (playlistId) => ipcRenderer.invoke('exports:count', playlistId),
+    run: (playlistId, destDir, naming) => ipcRenderer.invoke('exports:run', playlistId, destDir, naming),
+    cancel: () => ipcRenderer.invoke('exports:cancel'),
+    reveal: (destDir) => ipcRenderer.invoke('exports:reveal', destDir),
+    onProgress: (cb) => on<ExportProgress>('exports:progress', cb)
   },
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),

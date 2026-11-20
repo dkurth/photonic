@@ -167,6 +167,22 @@ export interface PhotoMeta {
 }
 
 /** The API exposed to the renderer as `window.photonic` (see src/preload). Grows milestone by milestone. */
+/** How exported copies are named (PLAN.md §15). */
+export type ExportNaming = 'original' | 'sequential' | 'date'
+
+export interface ExportProgress {
+  done: number
+  total: number
+}
+
+export interface ExportResult {
+  destDir: string
+  copied: number
+  /** Photos that couldn't be copied ('missing' = the original isn't there any more). */
+  failed: { path: string; reason: string }[]
+  cancelled: boolean
+}
+
 export interface PhotonicAPI {
   app: {
     info(): Promise<AppInfo>
@@ -232,6 +248,18 @@ export interface PhotonicAPI {
     remove(id: number, moveTo: PlaylistId): Promise<{ moved: number }>
     /** Fires when playlists change (from any window). */
     onChanged(cb: () => void): Unsubscribe
+  }
+  exports: {
+    /** Asks for a destination folder (can create one). Null if cancelled. */
+    pickFolder(): Promise<string | null>
+    /** How many photos an export of this playlist copies (no missing files or hidden duplicates). */
+    count(playlistId: number): Promise<number>
+    /** Copies a playlist's photos (all libraries) into `destDir`, flat. Originals are never touched. */
+    run(playlistId: number, destDir: string, naming: ExportNaming): Promise<ExportResult>
+    /** Stops a running export after the file being copied. */
+    cancel(): Promise<void>
+    reveal(destDir: string): Promise<void>
+    onProgress(cb: (p: ExportProgress) => void): Unsubscribe
   }
   settings: {
     get<T>(key: string): Promise<T | null>

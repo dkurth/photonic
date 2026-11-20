@@ -1,11 +1,13 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import type { AppInfo, Library, ScanProgress, ViewSpec } from '@shared/types'
+import { isAbsolute } from 'node:path'
+import type { AppInfo, ExportNaming, Library, ScanProgress, ViewSpec } from '@shared/types'
 import type { DB } from './db'
 import { schemaVersion } from './db'
 import { listBackups } from './db/backup'
 import type { FeatureRegistry } from './features/registry'
 import type { IpcRegistrar } from './features/types'
 import { addLibrary, getLibraryRow, libraryStats, listLibraries, toLibrary } from './library'
+import { exportSources, runExport } from './export'
 import { markFolder, resolveFolder } from './folderMarks'
 import { setPlaylist, undoLast } from './marks'
 import {
@@ -202,6 +204,51 @@ export function registerCoreIpc(ctx: {
     return changed(listPlaylists(db))
   })
   handle('playlists:remove', (pid, moveTo) => changed(deletePlaylist(db, id(pid), playlistArg(db, moveTo, true))))
+
+  // Export (PLAN.md §15): copies a playlist's photos into one flat folder. One export at a time.
+  const LAST_EXPORT_DIR = 'export.lastDir'
+  let exporting: { cancelled: boolean } | null = null
+  handle('exports:pickFolder', async () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const opts = {
+      title: 'Choose where to copy the photos',
+      buttonLabel: 'Choose',
+      defaultPath: getSetting<string>(db, LAST_EXPORT_DIR) ?? app.getPath('pictures'),
+      properties: ['openDirectory' as const, 'createDirectory' as const]
+    }
+    const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    return res.canceled ? null : (res.filePaths[0] ?? null)
+  })
+  handle(
+    'exports:count',
+    (playlistId) => exportSources(db, playlistArg(db, playlistId, false)!, vis.hideReasons).length
+  )
+  handle('exports:run', async (playlistId, destDir, naming) => {
+    const pid = playlistArg(db, playlistId, false)!
+    if (typeof destDir !== 'string' || !isAbsolute(destDir) || destDir.length > 4096) throw new Error('Invalid folder')
+    if (!['original', 'sequential', 'date'].includes(naming as string)) throw new Error('Invalid naming')
+    if (exporting) throw new Error('An export is already running')
+    const job = (exporting = { cancelled: false })
+    try {
+      setSetting(db, LAST_EXPORT_DIR, destDir)
+      const send = (p: unknown): void => {
+        for (const w of BrowserWindow.getAllWindows()) w.webContents.send('exports:progress', p)
+      }
+      return await runExport(exportSources(db, pid, vis.hideReasons), destDir, naming as ExportNaming, {
+        onProgress: send,
+        isCancelled: () => job.cancelled
+      })
+    } finally {
+      exporting = null
+    }
+  })
+  handle('exports:cancel', () => {
+    if (exporting) exporting.cancelled = true
+  })
+  handle('exports:reveal', async (destDir) => {
+    if (typeof destDir !== 'string' || !isAbsolute(destDir)) throw new Error('Invalid folder')
+    await shell.openPath(destDir)
+  })
 
   handle('settings:get', (key) => getSetting(db, str(key, 'key')))
   handle('settings:set', (key, value) => setSetting(db, str(key, 'key'), value))

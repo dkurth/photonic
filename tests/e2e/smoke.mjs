@@ -721,6 +721,40 @@ try {
       await manage().waitFor({ state: 'detached' })
       assert.equal((await counts(win)).meh, 3) // new.jpg moved from Funny to Meh
     })
+
+    await step(
+      'export a playlist: pick a folder, rename with date, copies land flat; originals untouched',
+      async () => {
+        const out = join(tmp, 'Prints')
+        mkdirSync(out)
+        writeFileSync(join(out, 'keep-me.txt'), 'x')
+        const before = readdirSync(photos, { recursive: true }).sort()
+        await stubFolderDialog(app, out)
+        await openManage()
+        await win.getByTestId(`playlist-row-${MEH}`).getByRole('button', { name: 'Export' }).click()
+        const dlg = win.getByRole('dialog', { name: 'Export Meh' })
+        await dlg.waitFor()
+        await win.waitForFunction((d) => document.querySelector('[data-testid=export-dest]')?.textContent === d, out)
+        await win.getByTestId('export-naming-date').check()
+        await shot(win, 'export-dialog')
+        await dlg.getByRole('button', { name: 'Export' }).click()
+        const result = win.getByTestId('export-result')
+        await result.waitFor()
+        assert.match(await result.innerText(), /Copied 3 photos to/)
+        assert.doesNotMatch(await dlg.innerText(), /skipped/) // missing files aren't even tried
+        const files = readdirSync(out).sort()
+        assert.equal(files.length, 4)
+        assert.ok(files.includes('keep-me.txt'))
+        for (const f of files.filter((f) => f !== 'keep-me.txt')) assert.match(f, /^\d{8}_\d{6}(_\d+)?\.(jpe?g|png)$/i)
+        assert.ok(files.includes('20190704_143210.jpg'), files.join(', ')) // new.jpg's EXIF date
+        assert.deepEqual(readdirSync(photos, { recursive: true }).sort(), before)
+        await shot(win, 'export-done')
+        await win.keyboard.press('Escape') // Done → back to Manage Playlists
+        await manage().waitFor()
+        await win.keyboard.press('Escape')
+        await manage().waitFor({ state: 'detached' })
+      }
+    )
     await app.close()
   }
 

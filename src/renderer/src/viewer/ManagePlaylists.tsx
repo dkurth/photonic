@@ -5,6 +5,7 @@ import { keyLabel, RESERVED_KEYS, shortcutName } from '@shared/shortcuts'
 import { Button } from '../components/Button'
 import { KeyCap } from '../components/KeyCap'
 import { useKeyboard } from '../hooks/useKeyboard'
+import { ExportDialog } from './ExportDialog'
 import { fmtNumber } from './format'
 import type { SystemShortcut } from './shortcuts'
 
@@ -66,6 +67,7 @@ export function ManagePlaylists({
   const [deleting, setDeleting] = useState<{ playlist: Playlist; moveTo: number | null } | null>(null)
   const [newName, setNewName] = useState('')
   const [message, setMessage] = useState<string | null>(null)
+  const [exporting, setExporting] = useState<Playlist | null>(null)
 
   const assign = useCallback(
     async (p: Playlist, key: string | null) => {
@@ -112,7 +114,7 @@ export function ManagePlaylists({
   }
   // Focus outside a text field: the shared key hook (it ignores text fields, which the dialog's own
   // onKeyDown below covers — so exactly one of the two handles any Esc).
-  useKeyboard({ Escape: onEscape }, !capturing)
+  useKeyboard({ Escape: onEscape }, !capturing && !exporting)
 
   const create = async (): Promise<void> => {
     if (!newName.trim()) return
@@ -128,6 +130,12 @@ export function ManagePlaylists({
   const reset = async (): Promise<void> => {
     await api.resetShortcuts([...new Set(system.map((s) => s.key))])
     setMessage('Shortcuts reset: Like is ↑, Meh is ↓, and keys that clashed with the app’s own were removed.')
+  }
+
+  if (exporting) {
+    // Shown instead of this dialog; closing it comes back here.
+    const fresh = playlists.find((p) => p.id === exporting.id) ?? exporting
+    return <ExportDialog playlist={fresh} onClose={() => setExporting(null)} />
   }
 
   return (
@@ -178,6 +186,15 @@ export function ManagePlaylists({
               >
                 ✕ key
               </button>
+              <Button
+                size="small"
+                disabled={p.photoCount === 0}
+                onClick={() => setExporting(p)}
+                title={p.photoCount ? `Copy ${p.name}'s photos to a folder` : `${p.name} has no photos`}
+                className="export-btn"
+              >
+                Export
+              </Button>
               {p.builtin ? (
                 <span className="note builtin-note">built in</span>
               ) : (

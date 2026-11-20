@@ -882,7 +882,7 @@
 
 /* ---------- Manage playlists ---------- */
 .modal.manage-playlists {
-  width: min(760px, calc(100vw - 32px));
+  width: min(840px, calc(100vw - 32px));
 }
 .playlist-rows {
   display: grid;
@@ -891,7 +891,7 @@
 }
 .playlist-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 90px 120px 60px 74px;
+  grid-template-columns: 28px minmax(0, 1fr) 90px 120px 60px 74px 74px;
   align-items: center;
   gap: 10px;
 }
@@ -984,4 +984,50 @@
 }
 .pl-swatch.other {
   background: var(--highlight);
+}
+
+/* ---------- Export ---------- */
+.export-dest {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  background: var(--paper);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+}
+.export-dest.empty {
+  color: var(--muted);
+}
+.export-options {
+  display: grid;
+  gap: 6px;
+}
+.export-option {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border: var(--border-w) solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.export-option.selected {
+  border-color: var(--ink);
+  background: var(--paper);
+}
+.export-option input {
+  accent-color: var(--accent);
+}
+.export-option .note {
+  display: block;
+  margin-top: 2px;
+}
+.export-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.error-text {
+  color: var(--like);
 }

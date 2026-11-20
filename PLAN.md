@@ -3,6 +3,7 @@
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
 Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
+- v2.1: Export (§15): copy a playlist's photos into one flat folder, keeping names or renaming them sequentially or by date. `npm run dev` now uses `--watch`, so main-process changes restart Electron (a stale main process had hidden the playlists).
 - v2.0: **Playlists** (§14). Every photo is Unreviewed or in exactly one playlist; Like and Meh are the two built-in playlists (renamable, not deletable). Each playlist can have a single-key shortcut. Migration 004 turns `photos.status` into `photos.playlist_id`. The first dropdown is now All / Unreviewed / Duplicates (`1`/`2`/`3`), next to a new Playlists dropdown.
 - v1.7: Marking feedback is a small wiggle of the Like/Meh toolbar button (the centre badge, border flash and hearts are gone). **Faster photo switching:** the next photos are kept *in the stage* as invisible `<img>` elements, explicitly decoded, and metadata already in the cache is used in the same render as the keypress. Measured on 12 MP JPEGs, the time from keypress to the next photo painted: typically 4–12 ms, worst 9–19 ms at ~2 presses/s (was ~65 ms on the first press), and ≤17 ms at ~7 presses/s in most runs. Sustained very fast pressing on very large photos is limited by JPEG decoding (~90 ms per 12 MP photo); screen-sized previews would be the next step if that ever matters.
 - v1.6: `PHOTONIC_HIDDEN=1` runs the app without ever showing its window or taking focus (no Dock icon, rendering still works for Playwright and screenshots). The e2e suite always uses it.
@@ -684,9 +685,22 @@ These are popular, long-running palettes from Coolors' trending list. (I picked 
 - **Toolbar:** the two marking buttons are whichever playlists are on ↓ and ↑. **Done screen:** a score for Like, Meh and every playlist with photos. **Folder dialog (`F`):** a button per playlist; overwriting other playlists asks first ("…are marked Like" / "…are in other playlists (12 Like, 8 memes)").
 - **Duplicates:** "copies you've marked" now means "copies in any playlist".
 
-## 15. Later (not in this plan yet)
+## 15. Export (v2.1)
 
-- **Export Liked photos** (for ordering prints) and other playlists. Details to be worked out later. One rule to follow now so both stay easy: **`photos.listIds(view)` stays the only place that decides which photos are in a view**, so a future action can take a `ViewSpec` (or a playlist) and get its photos the same way the viewer does.
+**Manage Playlists → Export** (next to each playlist with photos) copies that playlist's photos into one folder, for ordering prints and the like.
+
+- The folder picker opens straight away (it can create a new folder; it starts in the last export folder). The dialog then shows the folder, the naming choice and **Export**; a progress bar and **Stop** while copying; then "Copied N photos" with **Show in Finder**.
+- **Copies only.** Originals are never touched. Copies land **flat** in the chosen folder (no subfolders) and keep the original's modification time.
+- **Never overwrites:** a name that's already taken — by another photo in the export or by a file already in the folder (compared case-insensitively, like macOS) — gets `_2`, `_3`… before the extension.
+- **Names:**
+  - *Keep the file names* (default): `IMG_0042.jpg`, `IMG_0042_2.jpg`.
+  - *Rename sequentially:* `001.jpg`, `002.jpg`… — at least 3 digits, more when there are 1,000+ photos (`0001.jpg`…). Each file keeps its own extension.
+  - *Rename with date:* `YYYYMMDD_HHMMSS.jpg` from the date the app shows (EXIF capture time, else file created, else modified), `_2`, `_3`… for photos from the same second.
+- **Which photos:** everything in the playlist across all libraries (playlists are global), ordered oldest first then by path — that order decides the sequence numbers and who gets `_2`. Files the last scan found missing and photos hidden by an active feature (extra duplicate copies) are left out; a file that vanished since the scan is skipped and reported.
+- Code: `src/main/export.ts` (`exportSources`, `planNames`, `runExport`), IPC `exports:*`, `ExportDialog.tsx`.
+
+## 16. Later (not in this plan yet)
+
 - Thumbnail grid view, a full EXIF info panel, near-duplicate detection (perceptual hashes), optional 8-bit sounds.
 
 ---

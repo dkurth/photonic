@@ -21,6 +21,8 @@ See [PLAN.md](PLAN.md) for the full design and milestone notes.
 | `H` | Hide toolbars |
 | `?` | All shortcuts |
 
+**Export** a playlist (e.g. your Likes, for prints) from Playlists → Manage Playlists…: it copies the photos into one folder, keeping their names or renaming them `001.jpg`… or `20190704_153012.jpg`. The originals stay where they are.
+
 The **View** menu has the theme (4 palettes), light/dark, animations, and the **Duplicate Detection** toggle.
 
 ## Development
