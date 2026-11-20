@@ -27,10 +27,24 @@ export function InfoBar({
         {date?.note && <span className="note"> · {date.note}</span>}
       </div>
       <div className="infobar-actions">
-        <Button size="small" keys={['C']} pressed={pressed.has('copy')} disabled={!meta} onClick={onCopy} title="Copy full path">
+        <Button
+          size="small"
+          keys={['C']}
+          pressed={pressed.has('copy')}
+          disabled={!meta}
+          onClick={onCopy}
+          title="Copy full path"
+        >
           Copy path
         </Button>
-        <Button size="small" keys={['O']} pressed={pressed.has('reveal')} disabled={!meta} onClick={onReveal} title="Show in Finder">
+        <Button
+          size="small"
+          keys={['O']}
+          pressed={pressed.has('reveal')}
+          disabled={!meta}
+          onClick={onReveal}
+          title="Show in Finder"
+        >
           Finder
         </Button>
       </div>

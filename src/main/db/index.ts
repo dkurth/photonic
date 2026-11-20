@@ -32,9 +32,7 @@ export function migrate(db: DB, migrations: Migration[]): number[] {
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`)
 
-  const applied = new Set(
-    db.prepare('SELECT version FROM schema_migrations').pluck().all() as number[]
-  )
+  const applied = new Set(db.prepare('SELECT version FROM schema_migrations').pluck().all() as number[])
   const record = db.prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
   const ran: number[] = []
 

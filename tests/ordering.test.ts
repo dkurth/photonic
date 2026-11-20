@@ -33,7 +33,11 @@ const setStatus = (db: DB, path: string, status: string): void =>
 
 describe('comparePaths', () => {
   it('sorts numbers naturally and case-insensitively', () => {
-    expect(['IMG_10.jpg', 'img_2.jpg', 'IMG_1.jpg'].sort(comparePaths)).toEqual(['IMG_1.jpg', 'img_2.jpg', 'IMG_10.jpg'])
+    expect(['IMG_10.jpg', 'img_2.jpg', 'IMG_1.jpg'].sort(comparePaths)).toEqual([
+      'IMG_1.jpg',
+      'img_2.jpg',
+      'IMG_10.jpg'
+    ])
   })
   it('keeps each folder together and lists a folder’s own files before its subfolders', () => {
     const sorted = ['b/x.jpg', 'a/z/1.jpg', 'a/b.jpg', 'a-b.jpg', 'a/c.jpg', 'top.jpg'].sort(comparePaths)
@@ -60,7 +64,10 @@ describe('listIds', () => {
 
   it('folder scope includes subfolders but not folders that only share a name prefix', async () => {
     const { db, paths, view } = await setup(['2019/a.jpg', '2019/x/b.jpg', '2019-old/c.jpg', '2019_x/d.jpg', 'e.jpg'])
-    expect(paths(listIds(db, view({ scope: { kind: 'folder', dirPath: '2019' } })))).toEqual(['2019/a.jpg', '2019/x/b.jpg'])
+    expect(paths(listIds(db, view({ scope: { kind: 'folder', dirPath: '2019' } })))).toEqual([
+      '2019/a.jpg',
+      '2019/x/b.jpg'
+    ])
     expect(paths(listIds(db, view({ scope: { kind: 'folder', dirPath: '2019/x' } })))).toEqual(['2019/x/b.jpg'])
     expect(listIds(db, view({ scope: { kind: 'folder', dirPath: '' } }))).toHaveLength(5)
   })

@@ -15,7 +15,10 @@ export interface BackupOptions {
 
 function stamp(d: Date): string {
   // 2026-11-20T08:31:00.123Z → 20261120T083100Z (sorts lexicographically = chronologically)
-  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+  return d
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '')
 }
 
 function parseStamp(s: string): Date {

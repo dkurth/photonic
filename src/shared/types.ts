@@ -31,6 +31,14 @@ export interface LibraryStats {
   folders: number
 }
 
+/** A folder in a library, with counts that include its subfolders. */
+export interface FolderInfo {
+  /** Relative to the library root; '' is the root itself. */
+  dirPath: string
+  total: number
+  unreviewed: number
+}
+
 export type ScanPhase = 'walking' | 'metadata' | 'done' | 'error'
 
 export interface ScanProgress {
@@ -121,6 +129,8 @@ export interface PhotonicAPI {
     last(): Promise<Library | null>
     rescan(id: number): Promise<void>
     stats(id: number): Promise<LibraryStats>
+    /** Every folder that contains photos (directly or in subfolders), in natural order. */
+    folders(id: number): Promise<FolderInfo[]>
     onProgress(cb: (p: ScanProgress) => void): Unsubscribe
   }
   photos: {

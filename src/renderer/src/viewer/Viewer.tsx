@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Library, PhotoMeta, ScanPhase, ScanProgress, Status, StatusCounts, ViewSpec } from '@shared/types'
+import type {
+  Filter,
+  Library,
+  PhotoMeta,
+  ScanPhase,
+  ScanProgress,
+  Scope,
+  Status,
+  StatusCounts,
+  ViewSpec
+} from '@shared/types'
 import { useKeyboard } from '../hooks/useKeyboard'
 import { usePressed } from '../hooks/usePressed'
 import { DoneScreen } from './DoneScreen'
+import { FolderPicker } from './FolderPicker'
 import { fmtNumber } from './format'
 import { InfoBar } from './InfoBar'
 import { firstUnreviewed, jumpsToUnreviewed, nextAfterMark } from './navigation'
@@ -10,6 +21,7 @@ import { PhotoCache } from './photoCache'
 import { Stage, type Flash } from './Stage'
 import { Toolbar } from './Toolbar'
 import { TopBar } from './TopBar'
+import { nextSort, SORT_LABELS, ViewControls } from './ViewControls'
 
 export const defaultView = (libraryId: number): ViewSpec => ({
   libraryId,
@@ -20,6 +32,9 @@ export const defaultView = (libraryId: number): ViewSpec => ({
 
 const viewKey = (libraryId: number): string => `view.${libraryId}`
 const posKey = (libraryId: number): string => `pos.${libraryId}`
+const seedsKey = (libraryId: number): string => `seeds.${libraryId}`
+const scopeKey = (scope: Scope): string => (scope.kind === 'folder' ? `folder:${scope.dirPath}` : 'library')
+const newSeed = (): number => Math.floor(Math.random() * 2 ** 31)
 
 export function Viewer({
   library,
@@ -41,6 +56,7 @@ export function Viewer({
   const [done, setDone] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [pressed, press] = usePressed()
 
   const currentId = ids[index] as number | undefined
@@ -120,9 +136,9 @@ export function Viewer({
       setMeta(m)
       // Preload where ↑/↓ would go next, plus the plain neighbors.
       const jump = view ? nextAfterMark(statuses, index, view.filter) : null
-      const near = [...new Set([jump === null ? undefined : ids[jump], ids[index + 1], ids[index + 2], ids[index - 1]])].filter(
-        (x): x is number => x !== undefined
-      )
+      const near = [
+        ...new Set([jump === null ? undefined : ids[jump], ids[index + 1], ids[index + 2], ids[index - 1]])
+      ].filter((x): x is number => x !== undefined)
       cache.keepImages([currentId, ...near])
       for (const id of near) void cache.get(id).then((n) => n && cache.preload(n))
     })
@@ -235,6 +251,58 @@ export function Viewer({
     refreshCounts(view)
   }, [api, cache, currentId, flashToast, ids, index, library.id, refreshCounts, view])
 
+  // --- Changing the view (PLAN.md §7) -----------------------------------------------------
+
+  /** Random order keeps one seed per library + scope, so each folder's shuffle is stable. */
+  const seedFor = useCallback(
+    async (scope: Scope, fresh = false): Promise<number> => {
+      const seeds = (await api.settings.get<Record<string, number>>(seedsKey(library.id))) ?? {}
+      const k = scopeKey(scope)
+      if (fresh || seeds[k] === undefined) {
+        seeds[k] = newSeed()
+        await api.settings.set(seedsKey(library.id), seeds)
+      }
+      return seeds[k]
+    },
+    [api, library.id]
+  )
+
+  const changeView = useCallback(
+    async (patch: Partial<ViewSpec>, opts: { freshSeed?: boolean } = {}) => {
+      if (!view) return
+      const v: ViewSpec = { ...view, ...patch, libraryId: library.id }
+      if (v.sort === 'random') v.seed = await seedFor(v.scope, opts.freshSeed)
+      else delete v.seed
+      setView(v)
+      setDone(false)
+      void api.settings.set(viewKey(library.id), v)
+      await loadList(v, currentIdRef.current, 0)
+    },
+    [api, library.id, loadList, seedFor, view]
+  )
+
+  const setFilter = useCallback((filter: Filter) => void changeView({ filter }), [changeView])
+
+  const cycleSort = useCallback(() => {
+    if (!view) return
+    press('sort')
+    const sort = nextSort(view.sort)
+    void changeView({ sort }).then(() => flashToast(`Order: ${SORT_LABELS[sort]}`))
+  }, [changeView, flashToast, press, view])
+
+  const reshuffle = useCallback(() => {
+    if (view?.sort !== 'random') return
+    void changeView({}, { freshSeed: true }).then(() => flashToast('Reshuffled'))
+  }, [changeView, flashToast, view])
+
+  const pickScope = useCallback(
+    (dirPath: string | null) => {
+      setPickerOpen(false)
+      void changeView({ scope: dirPath === null ? { kind: 'library' } : { kind: 'folder', dirPath } })
+    },
+    [changeView]
+  )
+
   const copyPath = useCallback(() => {
     if (currentId === undefined) return
     press('copy')
@@ -247,28 +315,39 @@ export function Viewer({
     void api.photos.revealInFinder(currentId)
   }, [api, currentId, press])
 
-  const unreviewedEarlier = done && view && jumpsToUnreviewed(view.filter) ? statuses.filter((s) => s === 'unreviewed').length : 0
+  const unreviewedEarlier =
+    done && view && jumpsToUnreviewed(view.filter) ? statuses.filter((s) => s === 'unreviewed').length : 0
 
-  useKeyboard({
-    ArrowRight: () => (press('next'), next()),
-    ArrowLeft: () => (press('prev'), prev()),
-    // Marking keys ignore key repeat, so a held key can't mark a whole folder (PLAN.md §2).
-    ArrowUp: (e) => !e.repeat && (press('like'), void mark('like')),
-    ArrowDown: (e) => !e.repeat && (press('meh'), void mark('meh')),
-    Backspace: (e) => !e.repeat && void mark('unreviewed'),
-    u: (e) => !e.repeat && void mark('unreviewed'),
-    'Mod+z': () => void undo(),
-    Home: () => go(0),
-    End: () => go(ids.length - 1),
-    Escape: () => setDone(false),
-    Enter: () => {
-      if (!done) return
-      const f = firstUnreviewed(statuses)
-      if (f >= 0) go(f)
+  useKeyboard(
+    {
+      ArrowRight: () => (press('next'), next()),
+      ArrowLeft: () => (press('prev'), prev()),
+      // Marking keys ignore key repeat, so a held key can't mark a whole folder (PLAN.md §2).
+      ArrowUp: (e) => !e.repeat && (press('like'), void mark('like')),
+      ArrowDown: (e) => !e.repeat && (press('meh'), void mark('meh')),
+      Backspace: (e) => !e.repeat && void mark('unreviewed'),
+      u: (e) => !e.repeat && void mark('unreviewed'),
+      'Mod+z': () => void undo(),
+      Home: () => go(0),
+      End: () => go(ids.length - 1),
+      Escape: () => setDone(false),
+      Enter: () => {
+        if (!done) return
+        const f = firstUnreviewed(statuses)
+        if (f >= 0) go(f)
+      },
+      c: copyPath,
+      o: reveal,
+      s: cycleSort,
+      r: reshuffle,
+      g: () => (press('scope'), setPickerOpen(true)),
+      '1': () => setFilter('all'),
+      '2': () => setFilter('unreviewed'),
+      '3': () => setFilter('like'),
+      '4': () => setFilter('meh')
     },
-    c: copyPath,
-    o: reveal
-  })
+    !pickerOpen
+  )
 
   // --- Render ------------------------------------------------------------------------------
 
@@ -285,12 +364,29 @@ export function Viewer({
 
   return (
     <div className="viewer">
-      <TopBar library={library} progress={progress} onOpenFolder={onOpenFolder} />
+      <TopBar
+        library={library}
+        progress={progress}
+        onOpenFolder={onOpenFolder}
+        controls={
+          view && (
+            <ViewControls
+              view={view}
+              pressed={pressed}
+              onScope={() => setPickerOpen(true)}
+              onFilter={setFilter}
+              onSort={cycleSort}
+            />
+          )
+        }
+      />
       <Stage
         meta={meta}
         empty={empty}
         flash={flash}
-        overlay={done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} scopeName={scopeName} /> : null}
+        overlay={
+          done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} scopeName={scopeName} /> : null
+        }
       />
       <InfoBar meta={meta} pressed={pressed} onCopy={copyPath} onReveal={reveal} />
       <Toolbar
@@ -304,6 +400,14 @@ export function Viewer({
         onLike={() => void mark('like')}
         onMeh={() => void mark('meh')}
       />
+      {pickerOpen && (
+        <FolderPicker
+          libraryId={library.id}
+          current={view?.scope.kind === 'folder' ? view.scope.dirPath : null}
+          onPick={pickScope}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           {toast}

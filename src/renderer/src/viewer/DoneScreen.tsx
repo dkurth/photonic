@@ -31,7 +31,8 @@ export function DoneScreen({
       )}
       {unreviewedEarlier > 0 ? (
         <p>
-          {fmtNumber(unreviewedEarlier)} unreviewed earlier. Press <kbd className="keycap">Enter</kbd> to go to the first one.
+          {fmtNumber(unreviewedEarlier)} unreviewed earlier. Press <kbd className="keycap">Enter</kbd> to go to the
+          first one.
         </p>
       ) : (
         <p>

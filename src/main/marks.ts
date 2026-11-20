@@ -24,13 +24,9 @@ export function setStatus(db: DB, photoId: number, status: Status, opts: MarkOpt
     if (old === undefined) return false
     if (old === status) return true
     db.prepare("UPDATE photos SET status = ?, status_at = datetime('now') WHERE id = ?").run(status, photoId)
-    db.prepare('INSERT INTO mark_events (photo_id, old_status, new_status, source, batch_id) VALUES (?, ?, ?, ?, ?)').run(
-      photoId,
-      old,
-      status,
-      opts.source ?? 'user',
-      opts.batchId ?? null
-    )
+    db.prepare(
+      'INSERT INTO mark_events (photo_id, old_status, new_status, source, batch_id) VALUES (?, ?, ?, ?, ?)'
+    ).run(photoId, old, status, opts.source ?? 'user', opts.batchId ?? null)
     return true
   })()
 }
@@ -58,7 +54,9 @@ export function undoLast(db: DB, libraryId: number): UndoResult | null {
       last.batch_id === null
         ? db.prepare('SELECT id, photo_id, old_status FROM mark_events WHERE id = ?').all(last.id)
         : db
-            .prepare('SELECT id, photo_id, old_status FROM mark_events WHERE batch_id = ? AND undone = 0 ORDER BY id DESC')
+            .prepare(
+              'SELECT id, photo_id, old_status FROM mark_events WHERE batch_id = ? AND undone = 0 ORDER BY id DESC'
+            )
             .all(last.batch_id)
     ) as { id: number; photo_id: number; old_status: Status }[]
 

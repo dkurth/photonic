@@ -81,7 +81,8 @@ const imageLoaded = (win) =>
 const waitPath = (win, suffix) =>
   win.waitForFunction((sfx) => document.querySelector('[data-testid=path]')?.textContent.endsWith(sfx), suffix)
 const tagStatus = (win) => win.getByTestId('status-tag').getAttribute('data-status')
-const stats = (win) => win.evaluate(async () => window.photonic.libraries.stats((await window.photonic.libraries.last()).id))
+const stats = (win) =>
+  win.evaluate(async () => window.photonic.libraries.stats((await window.photonic.libraries.last()).id))
 
 try {
   // ------------------------------------------------------------------ run 0
@@ -129,7 +130,9 @@ try {
       await win.click('text=Open a folder…')
       await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '1 / 5')
       // natural sort, folder's own files first: broken.jpg, top.jpg, then 2019/Italy/…, 2020/…
-      await win.waitForFunction(() => document.querySelector('[data-testid=path]')?.textContent.endsWith('My Photos/broken.jpg'))
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=path]')?.textContent.endsWith('My Photos/broken.jpg')
+      )
       const s = await stats(win)
       assert.equal(s.total, 5)
       assert.equal(s.folders, 3)
@@ -146,7 +149,9 @@ try {
       await imageLoaded(win)
       assert.equal(await text(win, 'date'), 'Taken 2019-07-04 14:32')
       await win.keyboard.press('ArrowRight')
-      await win.waitForFunction(() => document.querySelector('[data-testid=path]')?.textContent.endsWith('IMG_0001.jpg'))
+      await win.waitForFunction(() =>
+        document.querySelector('[data-testid=path]')?.textContent.endsWith('IMG_0001.jpg')
+      )
       await imageLoaded(win)
       await shot(win, 'm2-viewer')
     })
@@ -216,7 +221,9 @@ try {
     await step('⌘Z undoes the last mark and goes back to that photo', async () => {
       await win.keyboard.press('Meta+z')
       await waitPath(win, 'IMG_0001.jpg')
-      await win.waitForFunction(() => document.querySelector('[data-testid=status-tag]')?.dataset.status === 'unreviewed')
+      await win.waitForFunction(
+        () => document.querySelector('[data-testid=status-tag]')?.dataset.status === 'unreviewed'
+      )
       assert.equal((await stats(win)).like, 1)
     })
 
@@ -237,7 +244,9 @@ try {
       await win.keyboard.press('Home')
       await waitPath(win, 'broken.jpg')
       await win.keyboard.press('u')
-      await win.waitForFunction(() => document.querySelector('[data-testid=status-tag]')?.dataset.status === 'unreviewed')
+      await win.waitForFunction(
+        () => document.querySelector('[data-testid=status-tag]')?.dataset.status === 'unreviewed'
+      )
       await win.keyboard.press('End')
       await waitPath(win, 'beach.png')
       await win.keyboard.press('ArrowUp') // already liked; still nothing unreviewed after it
@@ -266,6 +275,68 @@ try {
       assert.equal(await win.evaluate(() => document.activeElement?.tagName), 'BODY', 'buttons must not keep focus')
       await shot(win, 'm3-viewer')
     })
+
+    // ---- M4: filters, sort orders, folder scopes ----
+    const position = () => text(win, 'position')
+    const checked = (id) => win.getByTestId(`filter-${id}`).getAttribute('aria-checked')
+
+    await step('filters 1–4 switch between All / Unreviewed / Like / Meh', async () => {
+      await win.keyboard.press('3')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent === '1 / 1')
+      await waitPath(win, 'beach.png')
+      assert.equal(await checked('like'), 'true')
+      await win.keyboard.press('4')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 3'))
+      await win.keyboard.press('1')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 5'))
+      assert.equal(await checked('all'), 'true')
+    })
+
+    await step('S cycles Filename → Date → Random; R reshuffles', async () => {
+      await win.keyboard.press('Home')
+      await waitPath(win, 'broken.jpg') // filename order starts with broken.jpg
+      await win.keyboard.press('s')
+      await win.waitForFunction(() => document.querySelector('[data-testid=sort]')?.textContent.startsWith('Date'))
+      await win.keyboard.press('Home')
+      await waitPath(win, 'top.jpg') // oldest EXIF date (ties broken by path: root files first)
+      await win.keyboard.press('s')
+      await win.waitForFunction(() => document.querySelector('[data-testid=sort]')?.textContent.startsWith('Random'))
+      assert.match(await position(), /\/ 5$/)
+      await win.keyboard.press('r')
+      await win.waitForSelector('text=Reshuffled')
+      await win.keyboard.press('s')
+      await win.waitForFunction(() => document.querySelector('[data-testid=sort]')?.textContent.startsWith('Filename'))
+    })
+
+    await step('G opens the folder picker; searching and Enter scopes the view to that folder', async () => {
+      await win.keyboard.press('g')
+      await win.getByRole('dialog', { name: 'Go to folder' }).waitFor()
+      await win.keyboard.type('ital')
+      await shot(win, 'm4-picker')
+      await win.keyboard.press('Enter')
+      await win.getByRole('dialog').waitFor({ state: 'detached' })
+      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('2019/Italy'))
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 2'))
+      assert.match(await text(win, 'counts'), /meh\s*2/)
+      await shot(win, 'm4-scoped')
+    })
+
+    await step('picker: Escape cancels; arrow keys + Enter go back to the entire library', async () => {
+      await win.keyboard.press('g')
+      await win.getByRole('dialog').waitFor()
+      await win.keyboard.press('Escape')
+      await win.getByRole('dialog').waitFor({ state: 'detached' })
+      assert.match(await text(win, 'scope'), /^2019\/Italy/)
+      await win.keyboard.press('g')
+      await win.getByRole('dialog').waitFor()
+      for (let i = 0; i < 6; i++) await win.keyboard.press('ArrowUp')
+      await win.keyboard.press('Enter')
+      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('Entire library'))
+      await win.keyboard.press('2')
+      await win.waitForFunction(() => document.querySelector('[data-testid=position]')?.textContent.endsWith('/ 1'))
+      await win.keyboard.press('Home')
+      await waitPath(win, 'broken.jpg')
+    })
     await app.close()
   }
 
@@ -292,11 +363,32 @@ try {
       // beach liked; top, IMG_0001 meh (IMG_0002 meh is now missing, so not counted); broken + new.jpg unreviewed
       assert.deepEqual([marked.like, marked.meh, marked.unreviewed], [1, 2, 2])
     })
+    await step('switch to Like, sorted by date, scoped to a folder…', async () => {
+      await win.keyboard.press('3')
+      await win.keyboard.press('s')
+      await win.waitForFunction(() => document.querySelector('[data-testid=sort]')?.textContent.startsWith('Date'))
+      await win.keyboard.press('g')
+      await win.keyboard.type('2020')
+      await win.keyboard.press('Enter')
+      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('2020'))
+    })
+    await app.close()
+  }
+
+  // ------------------------------------------------------------------ run 3
+  {
+    const { app, win } = await launch()
+    await step('…and the view (scope, filter, sort) is restored on the next launch', async () => {
+      await win.waitForFunction(() => document.querySelector('[data-testid=scope]')?.textContent.startsWith('2020'))
+      assert.equal(await win.getByTestId('filter-like').getAttribute('aria-checked'), 'true')
+      assert.match(await text(win, 'sort'), /^Date/)
+      await waitPath(win, 'beach.png')
+    })
     await app.close()
   }
 
   assert.ok(readdirSync(userData).includes('photonic.db'))
-  assert.equal(readdirSync(join(userData, 'backups')).length, 1, 'second launch within 24h must not back up again')
+  assert.equal(readdirSync(join(userData, 'backups')).length, 1, 'later launches within 24h must not back up again')
   console.log(`e2e: ${results.length} checks passed`)
 } finally {
   rmSync(tmp, { recursive: true, force: true })

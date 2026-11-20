@@ -22,7 +22,12 @@ describe('ScanService', () => {
   it('runs walk → metadata → done and reports progress', async () => {
     const { db, lib } = setup(12)
     const events: ScanProgress[] = []
-    const svc = new ScanService(db, { hooks: () => [], extract: readMetadata, emit: (p) => events.push(p), throttleMs: 0 })
+    const svc = new ScanService(db, {
+      hooks: () => [],
+      extract: readMetadata,
+      emit: (p) => events.push(p),
+      throttleMs: 0
+    })
     await svc.scan(lib.id)
 
     const phases = [...new Set(events.map((e) => e.phase))]

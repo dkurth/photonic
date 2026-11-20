@@ -16,9 +16,18 @@ function setup(files: Record<string, string>): { db: DB; root: string; lib: Libr
   return { db, root, lib: addLibrary(db, root) }
 }
 
-type Row = { id: number; rel_path: string; dir_path: string; status: string; missing: number; meta_read_at: string | null }
+type Row = {
+  id: number
+  rel_path: string
+  dir_path: string
+  status: string
+  missing: number
+  meta_read_at: string | null
+}
 const rows = (db: DB): Row[] =>
-  db.prepare('SELECT id, rel_path, dir_path, status, missing, meta_read_at FROM photos ORDER BY rel_path').all() as Row[]
+  db
+    .prepare('SELECT id, rel_path, dir_path, status, missing, meta_read_at FROM photos ORDER BY rel_path')
+    .all() as Row[]
 const byPath = (db: DB, p: string): Row => rows(db).find((r) => r.rel_path === p)!
 
 describe('scanLibrary', () => {

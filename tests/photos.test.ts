@@ -86,7 +86,9 @@ describe('resolvePhotoFile (photo:// protocol path check)', () => {
     mkdirSync(join(root, 'real'))
     writeFileSync(join(root, 'real', 'x.jpg'), 'x')
     const row = db.prepare('SELECT id FROM libraries').pluck().get() as number
-    db.prepare("INSERT INTO photos (library_id, rel_path, dir_path, size_bytes, mtime_ms) VALUES (?, 'alias.jpg', '', 1, 1)").run(row)
+    db.prepare(
+      "INSERT INTO photos (library_id, rel_path, dir_path, size_bytes, mtime_ms) VALUES (?, 'alias.jpg', '', 1, 1)"
+    ).run(row)
     symlinkSync(join(root, 'real', 'x.jpg'), join(root, 'alias.jpg'))
     const pid = db.prepare("SELECT id FROM photos WHERE rel_path = 'alias.jpg'").pluck().get() as number
     expect(resolvePhotoFile(db, pid)).toMatch(/real\/x\.jpg$/)

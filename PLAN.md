@@ -2,7 +2,8 @@
 
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
-Status: **v0.11** (2026-11-20). **M0–M3 complete.**
+Status: **v0.12** (2026-11-20). **M0–M4 complete.**
+- v0.12: M4 built. The view (scope, filter, sort) is saved per library. Random seeds are saved per library + scope. Prettier is set up (`npm run format`).
 - v0.11: M3 built. Migration 002 adds `mark_events.undone`: undo flags events instead of deleting them, so the log stays a full history. Toolbar buttons never take keyboard focus, so Enter/Space can't trigger them by accident.
 - v0.10: M2 built. The position is saved on every move, not debounced (a debounce lost the last move on quit). `listIds` already supports every scope, filter and sort; the controls for them come in M4.
 - v0.9: M1 built. Change from the plan: new files are inserted right away, and a move hook *merges* a new row into its matching missing row afterwards (§6, §8). Scanning also refuses to run if the library folder is gone, and never flags photos missing under folders it couldn't read.
@@ -518,7 +519,7 @@ photonic/
 - Counts, end-of-list summary screen
 - Tests: status transitions, next-unreviewed jumps, undo order
 
-**M4 — Ordering, scopes & filters**
+**M4 — Ordering, scopes & filters** ✅ *done 2026-11-20*
 - Sort by filename, date and random (seeded, `R` to reshuffle). `S` to cycle.
 - Folder scope and the `G` folder picker
 - Filters 1–4

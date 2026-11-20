@@ -16,7 +16,17 @@ export interface ButtonProps {
 }
 
 /** Raised button with a hard shadow that sinks when pressed (PLAN.md §12). */
-export function Button({ children, keys, variant = 'plain', size = 'normal', pressed, disabled, title, className, onClick }: ButtonProps) {
+export function Button({
+  children,
+  keys,
+  variant = 'plain',
+  size = 'normal',
+  pressed,
+  disabled,
+  title,
+  className,
+  onClick
+}: ButtonProps) {
   const cls = ['btn', variant !== 'plain' && variant, size !== 'normal' && size, pressed && 'pressed', className]
     .filter(Boolean)
     .join(' ')
@@ -33,7 +43,9 @@ export function Button({ children, keys, variant = 'plain', size = 'normal', pre
       onMouseDown={(e) => e.preventDefault()}
     >
       {children}
-      {keys?.map((k) => <KeyCap key={k} k={k} />)}
+      {keys?.map((k) => (
+        <KeyCap key={k} k={k} />
+      ))}
     </button>
   )
 }

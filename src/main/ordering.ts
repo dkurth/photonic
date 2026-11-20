@@ -109,11 +109,9 @@ export function statusCounts(db: DB, libraryId: number, scope: Scope): StatusCou
     .get(libraryId, ...s.params) as StatusCounts
 }
 
-function sortRows<T extends { id: number; rel_path: string; taken_at: string | null; birthtime_ms: number | null; mtime_ms: number }>(
-  rows: T[],
-  sort: SortOrder,
-  seed: number
-): T[] {
+function sortRows<
+  T extends { id: number; rel_path: string; taken_at: string | null; birthtime_ms: number | null; mtime_ms: number }
+>(rows: T[], sort: SortOrder, seed: number): T[] {
   switch (sort) {
     case 'filename':
       return rows.sort((a, b) => comparePaths(a.rel_path, b.rel_path))

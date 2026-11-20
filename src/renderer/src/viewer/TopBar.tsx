@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Library, ScanProgress } from '@shared/types'
 import { Button } from '../components/Button'
 import { Logo } from '../components/Logo'
@@ -16,10 +17,12 @@ function scanStatus(p: ScanProgress | null): string | null {
 export function TopBar({
   library,
   progress,
+  controls,
   onOpenFolder
 }: {
   library: Library
   progress: ScanProgress | null
+  controls?: ReactNode
   onOpenFolder: () => void
 }) {
   const status = scanStatus(progress)
@@ -30,6 +33,7 @@ export function TopBar({
       <span className="library-name" title={library.rootPath}>
         {library.name}
       </span>
+      {controls}
       <span className="spacer" />
       {status && (
         <span className={`scan-status ${progress?.phase === 'error' ? 'error' : ''}`} role="status">
@@ -37,7 +41,7 @@ export function TopBar({
         </span>
       )}
       <Button size="small" keys={['⌘O']} onClick={onOpenFolder} title="Open another folder">
-        Open folder…
+        <span className="open-label">Open folder…</span>
       </Button>
     </header>
   )

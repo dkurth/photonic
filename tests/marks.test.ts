@@ -17,7 +17,8 @@ function setup(n = 4): { db: DB; lib: number; ids: number[] } {
   )
   return { db, lib, ids }
 }
-const status = (db: DB, id: number): string => db.prepare('SELECT status FROM photos WHERE id = ?').pluck().get(id) as string
+const status = (db: DB, id: number): string =>
+  db.prepare('SELECT status FROM photos WHERE id = ?').pluck().get(id) as string
 const events = (db: DB): number => db.prepare('SELECT count(*) FROM mark_events').pluck().get() as number
 
 describe('setStatus', () => {
@@ -84,10 +85,14 @@ describe('undoLast', () => {
 
   it('only touches the given library', () => {
     const a = setup(1)
-    const otherLib = Number(a.db.prepare("INSERT INTO libraries (root_path, name) VALUES ('/q', 'q')").run().lastInsertRowid)
+    const otherLib = Number(
+      a.db.prepare("INSERT INTO libraries (root_path, name) VALUES ('/q', 'q')").run().lastInsertRowid
+    )
     const otherPhoto = Number(
       a.db
-        .prepare("INSERT INTO photos (library_id, rel_path, dir_path, size_bytes, mtime_ms) VALUES (?, 'x.jpg', '', 1, 1)")
+        .prepare(
+          "INSERT INTO photos (library_id, rel_path, dir_path, size_bytes, mtime_ms) VALUES (?, 'x.jpg', '', 1, 1)"
+        )
         .run(otherLib).lastInsertRowid
     )
     setStatus(a.db, a.ids[0], 'like')

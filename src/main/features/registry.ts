@@ -12,9 +12,7 @@ export class FeatureRegistry {
     }
     for (const m of feature.migrations ?? []) {
       if (m.version <= CORE_MAX_VERSION) {
-        throw new Error(
-          `Feature "${feature.name}" migration ${m.version} must use a version above ${CORE_MAX_VERSION}`
-        )
+        throw new Error(`Feature "${feature.name}" migration ${m.version} must use a version above ${CORE_MAX_VERSION}`)
       }
     }
     this.features.push(feature)

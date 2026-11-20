@@ -31,11 +31,10 @@ export function localDateTime(ms: number): string {
 }
 
 /** EXIF capture time, else file creation time, else modification time (PLAN.md §5). */
-export function displayDate(row: {
-  taken_at: string | null
-  birthtime_ms: number | null
-  mtime_ms: number
-}): { date: string; source: DateSource } {
+export function displayDate(row: { taken_at: string | null; birthtime_ms: number | null; mtime_ms: number }): {
+  date: string
+  source: DateSource
+} {
   if (row.taken_at) return { date: row.taken_at, source: 'taken' }
   if (row.birthtime_ms) return { date: localDateTime(row.birthtime_ms), source: 'created' }
   return { date: localDateTime(row.mtime_ms), source: 'modified' }
@@ -49,9 +48,7 @@ export function photoUrl(id: number, mtimeMs: number): string {
 export function getPhotoRow(db: DB, id: number): PhotoRow | null {
   return (
     (db
-      .prepare(
-        `SELECT p.*, l.root_path FROM photos p JOIN libraries l ON l.id = p.library_id WHERE p.id = ?`
-      )
+      .prepare(`SELECT p.*, l.root_path FROM photos p JOIN libraries l ON l.id = p.library_id WHERE p.id = ?`)
       .get(id) as PhotoRow | undefined) ?? null
   )
 }

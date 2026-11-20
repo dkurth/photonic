@@ -12,6 +12,7 @@ const api: PhotonicAPI = {
     last: () => ipcRenderer.invoke('libraries:last'),
     rescan: (id) => ipcRenderer.invoke('libraries:rescan', id),
     stats: (id) => ipcRenderer.invoke('libraries:stats', id),
+    folders: (id) => ipcRenderer.invoke('libraries:folders', id),
     onProgress: (cb) => {
       const listener = (_e: IpcRendererEvent, p: ScanProgress): void => cb(p)
       ipcRenderer.on('libraries:progress', listener)

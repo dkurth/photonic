@@ -22,9 +22,7 @@ describe('FeatureRegistry', () => {
 
   it('rejects feature migrations in the core version range', () => {
     const r = new FeatureRegistry()
-    expect(() => r.register({ name: 'bad', migrations: [{ version: 5, name: 'x', sql: '' }] })).toThrow(
-      /above 99/
-    )
+    expect(() => r.register({ name: 'bad', migrations: [{ version: 5, name: 'x', sql: '' }] })).toThrow(/above 99/)
   })
 
   it('rejects duplicate feature names', () => {

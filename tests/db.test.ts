@@ -17,9 +17,7 @@ function addLibraryAndPhoto(db: DB, relPath = 'a/b.jpg'): { libraryId: number; p
   )
   const photoId = Number(
     db
-      .prepare(
-        'INSERT INTO photos (library_id, rel_path, dir_path, size_bytes, mtime_ms) VALUES (?, ?, ?, 1, 1)'
-      )
+      .prepare('INSERT INTO photos (library_id, rel_path, dir_path, size_bytes, mtime_ms) VALUES (?, ?, ?, 1, 1)')
       .run(libraryId, relPath, 'a').lastInsertRowid
   )
   return { libraryId, photoId }
@@ -42,16 +40,16 @@ describe('migrate', () => {
     expect(migrate(db, coreMigrations)).toEqual([])
     expect(schemaVersion(db)).toBe(2)
 
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-      .pluck()
-      .all()
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").pluck().all()
     expect(tables).toEqual(['libraries', 'mark_events', 'photos', 'schema_migrations', 'settings'])
   })
 
   it('upgrades an existing v1 database to the latest version, keeping its data', () => {
     const db = openDatabase(':memory:')
-    migrate(db, coreMigrations.filter((m) => m.version === 1))
+    migrate(
+      db,
+      coreMigrations.filter((m) => m.version === 1)
+    )
     db.prepare("INSERT INTO libraries (root_path, name) VALUES ('/p', 'p')").run()
     expect(migrate(db, coreMigrations)).toEqual([2])
     expect(db.prepare('SELECT count(*) FROM libraries').pluck().get()).toBe(1)
@@ -70,9 +68,7 @@ describe('migrate', () => {
 
   it('rolls back a failing migration and does not record it', () => {
     const db = openDatabase(':memory:')
-    expect(() =>
-      migrate(db, [{ version: 1, name: 'bad', sql: 'CREATE TABLE ok (x); THIS IS NOT SQL;' }])
-    ).toThrow()
+    expect(() => migrate(db, [{ version: 1, name: 'bad', sql: 'CREATE TABLE ok (x); THIS IS NOT SQL;' }])).toThrow()
     expect(schemaVersion(db)).toBe(0)
     expect(db.prepare("SELECT count(*) FROM sqlite_master WHERE name = 'ok'").pluck().get()).toBe(0)
   })

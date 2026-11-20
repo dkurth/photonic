@@ -124,12 +124,7 @@ export function jpegWithExif(spec: ExifSpec): Buffer {
   const app1Body = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff])
   const app1Len = Buffer.alloc(2)
   app1Len.writeUInt16BE(app1Body.length + 2)
-  return Buffer.concat([
-    Buffer.from([0xff, 0xd8, 0xff, 0xe1]),
-    app1Len,
-    app1Body,
-    Buffer.from([0xff, 0xd9])
-  ])
+  return Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe1]), app1Len, app1Body, Buffer.from([0xff, 0xd9])])
 }
 
 /** A "JPEG" with no EXIF at all. */

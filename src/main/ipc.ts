@@ -5,7 +5,7 @@ import { schemaVersion } from './db'
 import { listBackups } from './db/backup'
 import type { FeatureRegistry } from './features/registry'
 import type { IpcRegistrar } from './features/types'
-import { addLibrary, getLibraryRow, libraryStats, listLibraries, toLibrary } from './library'
+import { addLibrary, getLibraryRow, libraryStats, listFolders, listLibraries, toLibrary } from './library'
 import { isStatus, setStatus, undoLast } from './marks'
 import { listIds, listPhotos, statusCounts } from './ordering'
 import { getPhotoRow, toPhotoMeta } from './photos'
@@ -107,6 +107,8 @@ export function registerCoreIpc(ctx: {
   })
 
   handle('libraries:stats', (libraryId) => libraryStats(db, id(libraryId)))
+
+  handle('libraries:folders', (libraryId) => listFolders(db, id(libraryId)))
 
   handle('photos:listIds', (view) => listIds(db, viewSpec(view), ctx.features.filters()))
 

@@ -19,10 +19,15 @@ describe('normalizeExifDate', () => {
     ['  2019:07:04 14:32:10  ', '2019-07-04 14:32:10']
   ])('%s → %s', (raw, want) => expect(normalizeExifDate(raw)).toBe(want))
 
-  it.each([['0000:00:00 00:00:00'], ['    :  :     :  :  '], [''], ['garbage'], ['2019:13:01 00:00:00'], [undefined], [12345]])(
-    'rejects %s',
-    (raw) => expect(normalizeExifDate(raw)).toBeNull()
-  )
+  it.each([
+    ['0000:00:00 00:00:00'],
+    ['    :  :     :  :  '],
+    [''],
+    ['garbage'],
+    ['2019:13:01 00:00:00'],
+    [undefined],
+    [12345]
+  ])('rejects %s', (raw) => expect(normalizeExifDate(raw)).toBeNull())
 })
 
 describe('readMetadata', () => {
@@ -72,7 +77,9 @@ describe('readMetadata', () => {
   })
 })
 
-async function library(files: Record<string, string | Buffer>): Promise<{ db: DB; lib: ReturnType<typeof addLibrary> }> {
+async function library(
+  files: Record<string, string | Buffer>
+): Promise<{ db: DB; lib: ReturnType<typeof addLibrary> }> {
   const root = tempDir()
   makeTree(root, files)
   const db = openDatabase(':memory:')
@@ -95,7 +102,12 @@ describe('runMetadataPass', () => {
 
     const rows = db
       .prepare('SELECT rel_path, taken_at, camera_model, meta_read_at FROM photos ORDER BY rel_path')
-      .all() as { rel_path: string; taken_at: string | null; camera_model: string | null; meta_read_at: string | null }[]
+      .all() as {
+      rel_path: string
+      taken_at: string | null
+      camera_model: string | null
+      meta_read_at: string | null
+    }[]
     expect(rows.map((r) => [r.rel_path, r.taken_at, r.camera_model])).toEqual([
       ['junk.png', null, null],
       ['with.jpg', '2021-05-06 07:08:09', 'X100V'],
