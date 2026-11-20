@@ -1,16 +1,17 @@
 import type { Migration } from '../db/migrations'
+import type { ScanHooks } from '../scanner/types'
 
 /** Registers an IPC handler (wraps ipcMain.handle so features never import electron directly). */
 export type IpcRegistrar = (channel: string, handler: (...args: unknown[]) => unknown) => void
 
 /**
  * An optional, removable feature (PLAN.md §8). The core never imports feature code;
- * features plug in through this interface. Scan hooks and filters are added when the
- * scanner and viewer exist (M1/M4).
+ * features plug in through this interface. Viewer filters are added in M4.
  */
 export interface Feature {
   name: string
   /** Must use versions >= 100. */
   migrations?: Migration[]
   registerIpc?(ipc: IpcRegistrar): void
+  scanHooks?: ScanHooks
 }

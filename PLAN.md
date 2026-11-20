@@ -2,7 +2,8 @@
 
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
-Status: **v0.8** (2026-11-20). **M0 complete.**
+Status: **v0.9** (2026-11-20). **M0 and M1 complete.**
+- v0.9: M1 built. Change from the plan: new files are inserted right away, and a move hook *merges* a new row into its matching missing row afterwards (§6, §8). Scanning also refuses to run if the library folder is gone, and never flags photos missing under folders it couldn't read.
 - v0.8: M0 built. Dev builds use a separate `Photonic-dev` data folder. better-sqlite3 13 ships prebuilt binaries that work in both Node and Electron, so tests run under plain Node.
 - v0.7: fonts are Monocraft (pixel), DM Sans (UI, proposed) and Space Mono (data). Arcade is the default palette.
 - v0.6: look & feel (§12): Gumroad-style raised buttons, small 8-bit touches, swappable Coolors palettes. Export removed from this plan.
@@ -236,7 +237,8 @@ The core scan doesn't depend on the dedupe feature at all.
 4. Each file found is sorted into one of three groups:
    - **Known path, same size and mtime:** unchanged. Set `missing = 0`.
    - **Known path, size or mtime changed:** the file was edited. Update the stat fields and clear `meta_read_at` so EXIF is read again. Its status is **kept**.
-   - **Unknown path:** a new file. Insert it as `unreviewed`, unless a scan hook claims it as a moved file (§8).
+   - **Unknown path:** a new file. Insert it as `unreviewed` right away, so it can be viewed immediately. If a scan hook later recognizes it as a moved file, it gets merged into the old row (§8).
+   - **Safety:** if the library folder itself is gone (e.g. an unplugged drive), the scan stops before changing anything. Photos under subfolders that couldn't be read are *not* flagged missing.
 5. Writes go to the DB in **batches of ~500 inside a transaction**. Existing `status` values are never overwritten.
 6. After the walk, rows not seen during this scan get `missing = 1`. They're hidden from the viewer, but their rows and decisions are kept.
 7. The UI shows scan progress ("Scanning… 12,340 files") through IPC events, and the viewer can open as soon as the first batch is in.
@@ -357,8 +359,9 @@ A strip along the bottom edge, also shown in full screen:
 
 ### Move detection (`matchMoves` hook)
 
-- **No missing rows** (always true on a first scan, usually true otherwise): returns nothing right away. There's nothing to match.
-- **Some missing rows that have a hash:** hash only the *new* files whose size equals the size of some missing row. Any new file with the same hash as a missing row is matched to it 1:1 (identical copies can be paired in any order). The core then **moves** that row: it updates `rel_path`/`dir_path`/stats and sets `missing = 0`, so the `id` and `status` are kept.
+- **How it plugs in:** after the walk, the core calls `matchMoves(added, missing)` with the rows inserted during this scan and every missing row in the library, including ones that went missing in earlier scans. The hook returns `{ missingId, addedId }` pairs. The core's `applyMoves` deletes the brand-new row and moves the old row to its path, keeping the old `id`, `status` and history. It ignores invalid pairs, such as a new row that has already been marked.
+- **No missing rows** (always true on a first scan, usually true otherwise): the hook isn't called. There's nothing to match.
+- **Some missing rows that have a hash:** hash only the *new* files whose size equals the size of some missing row. Any new file with the same hash as a missing row is matched to it 1:1 (identical copies can be paired in any order) and returned as a pair.
 - Missing rows that never got a hash can't be matched; the new file becomes a new row. Moves between libraries aren't detected.
 
 ### Duplicates
@@ -496,7 +499,7 @@ photonic/
 - better-sqlite3 installed and rebuilt for Electron. Startup creates the DB and runs migrations. Daily backup.
 - `Feature` interface and registry, with nothing registered yet
 
-**M1 — Library, scan & metadata**
+**M1 — Library, scan & metadata** ✅ *done 2026-11-20*
 - Folder picker, recursive walk with batched upserts, missing-file flagging, progress events
 - EXIF metadata worker (can be resumed) and on-demand reads for the current photo
 - Tests: scanner on a fixture tree (nested folders, hidden files, mixed-case extensions, `.heic`/`.mov` ignored, a symlink); EXIF parsing on sample files with and without EXIF

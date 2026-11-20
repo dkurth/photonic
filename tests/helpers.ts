@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach } from 'vitest'
 
 const dirs: string[] = []
@@ -15,3 +15,12 @@ export function tempDir(): string {
 afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
+
+/** Creates files (and their parent folders) under root. */
+export function makeTree(root: string, files: Record<string, string | Buffer>): void {
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = join(root, rel)
+    mkdirSync(dirname(abs), { recursive: true })
+    writeFileSync(abs, content)
+  }
+}

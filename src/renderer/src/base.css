@@ -1,7 +1,10 @@
-/* Placeholder styling for M0. The real theme system (tokens, palettes, Monocraft) arrives in M2. */
+/* Placeholder styling for M0/M1. The real theme system (tokens, palettes, Monocraft) arrives in M2. */
 :root {
   --paper: #f4f1ea;
+  --surface: #ffffff;
   --ink: #111111;
+  --muted: #5c5a55;
+  --accent: #ffd166;
   --font-ui: 'DM Sans', system-ui, sans-serif;
   --font-data: 'Space Mono', ui-monospace, monospace;
 }
@@ -14,19 +17,56 @@ body {
   -webkit-user-select: none;
   user-select: none;
 }
-.m0 { max-width: 640px; margin: 0 auto; padding: 48px 24px; }
-.m0 h1 { font-size: 40px; letter-spacing: 0.04em; margin: 0 0 24px; }
-.m0 dl {
+
+.btn {
+  font: 700 15px var(--font-ui);
+  background: var(--accent);
+  color: var(--ink);
   border: 2px solid var(--ink);
-  box-shadow: 4px 4px 0 var(--ink);
   border-radius: 4px;
-  padding: 16px 20px;
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 8px 16px;
-  margin: 0;
-  background: #fff;
+  padding: 10px 18px;
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 60ms ease-out, box-shadow 60ms ease-out;
 }
-.m0 dt { font-weight: 700; }
-.m0 dd { margin: 0; font-family: var(--font-data); font-size: 13px; overflow-wrap: anywhere; user-select: text; }
-.m0 .err { color: #b00020; font-family: var(--font-data); }
+.btn:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
+.btn:active { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--ink); }
+.btn.small { padding: 6px 12px; font-size: 13px; box-shadow: 3px 3px 0 var(--ink); }
+.btn.small:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink); }
+
+.link {
+  font: 700 15px var(--font-ui);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.m1 { max-width: 760px; margin: 0 auto; padding: 40px 24px; }
+.m1 header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+.m1 h1 { font-size: 36px; letter-spacing: 0.04em; margin: 0; }
+.m1 .hint { color: var(--muted); font-size: 17px; }
+.m1 .err { color: #b00020; font-family: var(--font-data); }
+.m1 .path { font-family: var(--font-data); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; user-select: text; margin: 4px 0; }
+
+.card {
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 4px 4px 0 var(--ink);
+  padding: 20px 24px;
+}
+.card-head { display: flex; align-items: center; justify-content: space-between; }
+.card h2 { margin: 0; font-size: 24px; }
+.status { font-weight: 700; margin: 14px 0; }
+.status[data-phase='error'] { color: #b00020; }
+.card dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 20px; margin: 0; }
+.card dt { color: var(--muted); }
+.card dd { margin: 0; font-family: var(--font-data); font-size: 14px; }
+
+.others { margin-top: 32px; }
+.others h3 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.others ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.others li { display: flex; flex-direction: column; }

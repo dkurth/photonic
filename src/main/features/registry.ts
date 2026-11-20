@@ -1,4 +1,5 @@
 import { CORE_MAX_VERSION, type Migration } from '../db/migrations'
+import type { ScanHooks } from '../scanner/types'
 import type { Feature, IpcRegistrar } from './types'
 
 export class FeatureRegistry {
@@ -24,6 +25,10 @@ export class FeatureRegistry {
 
   migrations(): Migration[] {
     return this.features.flatMap((f) => f.migrations ?? [])
+  }
+
+  scanHooks(): ScanHooks[] {
+    return this.features.flatMap((f) => (f.scanHooks ? [f.scanHooks] : []))
   }
 
   registerIpc(ipc: IpcRegistrar): void {
