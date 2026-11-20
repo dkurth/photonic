@@ -181,5 +181,9 @@ export const dedupe: RendererFeature = {
   name: 'dedupe',
   filters: [{ id: 'duplicates', key: '5', label: 'Duplicates' }],
   Layer: DedupeLayer,
-  InfoBadge: CopiesBadge
+  InfoBadge: CopiesBadge,
+  shortcuts: [
+    { keys: ['5'], label: 'Show only duplicates' },
+    { keys: ['D'], label: 'List identical copies' }
+  ]
 }

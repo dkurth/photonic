@@ -14,6 +14,7 @@ import { useKeyboard } from '../hooks/useKeyboard'
 import { usePressed } from '../hooks/usePressed'
 import { DoneScreen } from './DoneScreen'
 import { FolderPicker } from './FolderPicker'
+import { ShortcutsOverlay } from './ShortcutsOverlay'
 import { fmtNumber } from './format'
 import { InfoBar } from './InfoBar'
 import { firstUnreviewed, jumpsToUnreviewed, nextAfterMark } from './navigation'
@@ -41,13 +42,15 @@ export function Viewer({
   library,
   progress,
   features,
-  onOpenFolder
+  onOpenFolder,
+  onSwitchLibrary
 }: {
   library: Library
   progress: ScanProgress | null
   /** UI of the optional features that are turned on. */
   features: RendererFeature[]
   onOpenFolder: () => void
+  onSwitchLibrary: () => void
 }) {
   const api = window.photonic
   const cache = useMemo(() => new PhotoCache(), [])
@@ -62,6 +65,19 @@ export function Viewer({
   const [toast, setToast] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [featureModal, setFeatureModal] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [hudHidden, setHudHidden] = useState(false)
+  const [zoomed, setZoomed] = useState(false)
+
+  // Full screen hides the toolbars (H brings them back); the info bar always stays (PLAN.md §7).
+  useEffect(() => {
+    void api.app.isFullScreen().then(setFullscreen)
+    return api.app.onFullScreen((on) => {
+      setFullscreen(on)
+      setHudHidden(on)
+    })
+  }, [api])
   const filters = useMemo(() => [...FILTERS, ...features.flatMap((f) => f.filters ?? [])], [features])
   const [pressed, press] = usePressed()
 
@@ -199,7 +215,7 @@ export function Viewer({
       setFlash((f) => {
         const n = (f?.n ?? 0) + 1
         // Remove it once the animation is over, rather than trusting it to end invisible.
-        window.setTimeout(() => setFlash((cur) => (cur?.n === n ? null : cur)), 400)
+        window.setTimeout(() => setFlash((cur) => (cur?.n === n ? null : cur)), 900)
         return { status, n }
       })
 
@@ -227,6 +243,8 @@ export function Viewer({
     [api, cache, currentId, done, flashToast, index, meta, refreshCounts, statuses, view]
   )
 
+  // ⌘Z: the page handles the key (and prevents the default, so the Edit → Undo menu accelerator
+  // doesn't also fire); choosing Edit → Undo with the mouse sends the 'undo' menu command instead.
   const undo = useCallback(async () => {
     const r = await api.marks.undo(library.id)
     if (!r) {
@@ -332,11 +350,11 @@ export function Viewer({
       ArrowUp: (e) => !e.repeat && (press('like'), void mark('like')),
       ArrowDown: (e) => !e.repeat && (press('meh'), void mark('meh')),
       Backspace: (e) => !e.repeat && void mark('unreviewed'),
-      u: (e) => !e.repeat && void mark('unreviewed'),
       'Mod+z': () => void undo(),
+      u: (e) => !e.repeat && void mark('unreviewed'),
       Home: () => go(0),
       End: () => go(ids.length - 1),
-      Escape: () => setDone(false),
+      Escape: () => (setDone(false), setZoomed(false)),
       Enter: () => {
         if (!done) return
         const f = firstUnreviewed(statuses)
@@ -347,14 +365,33 @@ export function Viewer({
       s: cycleSort,
       r: reshuffle,
       g: () => (press('scope'), setPickerOpen(true)),
+      f: () => void api.app.toggleFullScreen(),
+      h: () => setHudHidden((x) => !x),
+      ' ': () => setZoomed((z) => !z),
+      '?': () => setShortcutsOpen(true),
       // 1–4 for the core filters, then any filters added by features (e.g. 5 = Duplicates)
       ...Object.fromEntries(filters.map((f) => [f.key, () => setFilter(f.id)]))
     },
-    !pickerOpen && !featureModal
+    !pickerOpen && !featureModal && !shortcutsOpen
   )
+  useKeyboard({ Escape: () => setShortcutsOpen(false), '?': () => setShortcutsOpen(false) }, shortcutsOpen)
 
-  // Menu: Library → Go to Folder…
-  useEffect(() => api.onMenu((cmd) => cmd === 'go-to-folder' && setPickerOpen(true)), [api])
+  // Menu commands. Undo goes to a focused text field if there is one, otherwise it undoes a mark.
+  const undoRef = useRef(undo)
+  undoRef.current = undo
+  useEffect(
+    () =>
+      api.onMenu((cmd) => {
+        if (cmd === 'go-to-folder') setPickerOpen(true)
+        if (cmd === 'shortcuts') setShortcutsOpen(true)
+        if (cmd === 'undo') {
+          const el = document.activeElement
+          if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) document.execCommand('undo')
+          else void undoRef.current()
+        }
+      }),
+    [api]
+  )
 
   const reload = useCallback(async () => {
     if (view) await loadList(view, currentIdRef.current, index)
@@ -387,11 +424,12 @@ export function Viewer({
   const scopeName = view?.scope.kind === 'folder' ? 'Folder' : 'Library'
 
   return (
-    <div className="viewer">
+    <div className={`viewer ${hudHidden ? 'hud-hidden' : ''} ${fullscreen ? 'fullscreen' : ''}`}>
       <TopBar
         library={library}
         progress={progress}
         onOpenFolder={onOpenFolder}
+        onSwitchLibrary={onSwitchLibrary}
         controls={
           view && (
             <ViewControls
@@ -409,6 +447,7 @@ export function Viewer({
         meta={meta}
         empty={empty}
         flash={flash}
+        zoomed={zoomed}
         overlay={
           done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} scopeName={scopeName} /> : null
         }
@@ -432,6 +471,9 @@ export function Viewer({
         onMeh={() => void mark('meh')}
       />
       {featureCtx && features.map((f) => f.Layer && <f.Layer key={f.name} ctx={featureCtx} />)}
+      {shortcutsOpen && (
+        <ShortcutsOverlay extra={features.flatMap((f) => f.shortcuts ?? [])} onClose={() => setShortcutsOpen(false)} />
+      )}
       {pickerOpen && (
         <FolderPicker
           libraryId={library.id}

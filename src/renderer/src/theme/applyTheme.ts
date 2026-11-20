@@ -1,5 +1,5 @@
 import { bestText } from './contrast'
-import { NEUTRALS, PALETTES, ROLES, TEXT_DARK, TEXT_LIGHT, type PaletteId } from './palettes'
+import { NEUTRALS, PALETTES, ROLES, TEXT_DARK, TEXT_LIGHT, type PaletteId } from '@shared/palettes'
 
 export type Mode = 'light' | 'dark'
 
@@ -21,8 +21,4 @@ export function applyTheme(id: PaletteId, mode: Mode, el: HTMLElement = document
   for (const [k, v] of Object.entries(themeVars(id, mode))) el.style.setProperty(k, v)
   el.dataset.mode = mode
   el.dataset.palette = id
-}
-
-export function systemMode(): Mode {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }

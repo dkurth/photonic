@@ -1,6 +1,7 @@
 import type { StatusCounts } from '@shared/types'
 import { STATUS_LABELS } from '@shared/labels'
 import { Button } from '../components/Button'
+import { ProgressBar } from '../components/ProgressBar'
 import { fmtNumber } from './format'
 
 export function Toolbar({
@@ -26,8 +27,11 @@ export function Toolbar({
 }) {
   return (
     <footer className="toolbar">
-      <div className="position pixel" data-testid="position">
-        {total ? `${fmtNumber(index + 1)} / ${fmtNumber(total)}` : '0 / 0'}
+      <div className="toolbar-left">
+        <div className="position pixel" data-testid="position">
+          {total ? `${fmtNumber(index + 1)} / ${fmtNumber(total)}` : '0 / 0'}
+        </div>
+        {counts && <ProgressBar value={counts.like + counts.meh} total={counts.total} />}
       </div>
       <div className="controls">
         <Button

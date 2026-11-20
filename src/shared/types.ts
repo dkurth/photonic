@@ -73,6 +73,17 @@ export interface ScanProgress {
 
 export type Unsubscribe = () => void
 
+export type Appearance = 'system' | 'light' | 'dark'
+
+/** UI preferences (set from the View menu). */
+export interface UiSettings {
+  theme: string
+  appearance: Appearance
+  animations: boolean
+  /** The effective mode right now (Appearance, or the system setting when it's 'system'). */
+  dark: boolean
+}
+
 export interface StatusCounts {
   total: number
   unreviewed: number
@@ -133,6 +144,12 @@ export interface PhotoMeta {
 export interface PhotonicAPI {
   app: {
     info(): Promise<AppInfo>
+    toggleFullScreen(): Promise<void>
+    isFullScreen(): Promise<boolean>
+    onFullScreen(cb: (on: boolean) => void): Unsubscribe
+    ui(): Promise<UiSettings>
+    /** Fires when a UI setting changes from the menu. */
+    onUiChanged(cb: (ui: UiSettings) => void): Unsubscribe
   }
   libraries: {
     /** Shows a folder picker; adds (or reuses) the library, opens it and starts a scan. */

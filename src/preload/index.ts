@@ -1,9 +1,21 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { PhotonicAPI, ScanProgress } from '@shared/types'
+import type { PhotonicAPI, ScanProgress, UiSettings } from '@shared/types'
+
+/** Subscribes to a main → renderer event; returns an unsubscribe function. */
+function on<T>(channel: string, cb: (v: T) => void): () => void {
+  const listener = (_e: IpcRendererEvent, v: T): void => cb(v)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}
 
 const api: PhotonicAPI = {
   app: {
-    info: () => ipcRenderer.invoke('app:info')
+    info: () => ipcRenderer.invoke('app:info'),
+    toggleFullScreen: () => ipcRenderer.invoke('app:toggleFullScreen'),
+    isFullScreen: () => ipcRenderer.invoke('app:isFullScreen'),
+    onFullScreen: (cb) => on<boolean>('fullscreen', cb),
+    ui: () => ipcRenderer.invoke('app:ui'),
+    onUiChanged: (cb) => on<UiSettings>('ui:changed', cb)
   },
   libraries: {
     pickAndOpen: () => ipcRenderer.invoke('libraries:pickAndOpen'),

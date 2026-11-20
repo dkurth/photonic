@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { migrate, openDatabase, type DB } from './db'
 import { backupIfDue } from './db/backup'
 import { coreMigrations } from './db/migrations'
@@ -11,6 +11,8 @@ import { buildMenu } from './menu'
 import { handlePhotoProtocol, registerPhotoScheme } from './photoProtocol'
 import { ScanService } from './scanner/service'
 import { getSetting, setSetting } from './settings'
+import { applyAppearance, readUi, writeUi } from './ui'
+import type { UiSettings } from '@shared/types'
 import { createWorkerExtractor } from './scanner/workerExtractor'
 
 // Keep development data away from real data. PHOTONIC_USER_DATA overrides both (used by e2e tests).
@@ -52,6 +54,8 @@ function createWindow(): void {
   })
 
   win.once('ready-to-show', () => win.show())
+  win.on('enter-full-screen', () => win.webContents.send('fullscreen', true))
+  win.on('leave-full-screen', () => win.webContents.send('fullscreen', false))
 
   // Never navigate the app window away; open external links in the browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -95,7 +99,23 @@ app.whenReady().then(() => {
   registerCoreIpc({ db, dbPath, backupDir, features: registry, scans, extract: metadata.extract })
   handlePhotoProtocol(() => db)
   registry.registerIpc(handle, { db })
-  buildMenu({ dedupe: dedupeEnabled(db), setDedupe: (on) => db && setSetting(db, DEDUPE_FLAG, on) })
+  applyAppearance(readUi(db).appearance)
+  const menu = {
+    dedupe: dedupeEnabled(db),
+    setDedupe: (on: boolean) => db && setSetting(db, DEDUPE_FLAG, on),
+    ui: () => readUi(db!),
+    setUi: (patch: Partial<UiSettings>) => {
+      if (!db) return
+      const ui = writeUi(db, patch)
+      buildMenu(menu)
+      // System light/dark changes (with Appearance = Match System) reach the renderer the same way.
+      nativeTheme.on('updated', () => {
+        if (db) for (const w of BrowserWindow.getAllWindows()) w.webContents.send('ui:changed', readUi(db))
+      }) // refresh radio/checkbox state
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send('ui:changed', ui)
+    }
+  }
+  buildMenu(menu)
 
   createWindow()
   app.on('activate', () => {

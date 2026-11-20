@@ -24,4 +24,6 @@ export interface RendererFeature {
   Layer?: ComponentType<{ ctx: FeatureContext }>
   /** Small extra info next to the date in the info bar. */
   InfoBadge?: ComponentType<{ ctx: FeatureContext }>
+  /** Listed in the keyboard shortcut overlay. */
+  shortcuts?: { keys: string[]; label: string }[]
 }

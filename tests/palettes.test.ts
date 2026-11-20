@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { themeVars } from '../src/renderer/src/theme/applyTheme'
 import { contrast, deltaE, hexToRgb } from '../src/renderer/src/theme/contrast'
-import { DEFAULT_PALETTE, PALETTES, ROLES, type PaletteId } from '../src/renderer/src/theme/palettes'
+import { DEFAULT_PALETTE, PALETTES, ROLES, type PaletteId } from '../src/shared/palettes'
 
 const ids = Object.keys(PALETTES) as PaletteId[]
 

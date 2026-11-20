@@ -17,7 +17,9 @@ export function useKeyboard(map: Record<string, KeyHandler>, enabled = true): vo
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!enabledRef.current) return
+      // First handler wins. Without this, a key that opens something (e.g. '?') could also reach
+      // the newly enabled handler that closes it: React re-renders between listeners (microtasks).
+      if (!enabledRef.current || e.defaultPrevented) return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       const mod = e.metaKey || e.ctrlKey

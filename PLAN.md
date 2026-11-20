@@ -2,7 +2,8 @@
 
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
-Status: **v0.13** (2026-11-20). **M0–M5 complete.**
+Status: **v0.14** (2026-11-20). **M0–M6 complete.**
+- v0.14: M6 built. The main process sends the effective light/dark mode (`nativeTheme`) to the renderer, rather than the renderer reading the media query. Keyboard handlers are "first one wins" (`defaultPrevented`). Palettes moved to `src/shared/` so the View → Theme menu can list them. ⌘L opens the library switcher.
 - v0.13: M5 built. New core hook `backgroundPass`: feature work like hashing runs after the EXIF pass inside the same cancellable scan job. A renderer feature registry (`src/renderer/src/features/index.ts`) mirrors the main one. If two files *swap* names, both paths still exist, so it counts as two in-place edits and the marks stay with the paths (a rare case, accepted).
 - v0.12: M4 built. The view (scope, filter, sort) is saved per library. Random seeds are saved per library + scope. Prettier is set up (`npm run format`).
 - v0.11: M3 built. Migration 002 adds `mark_events.undone`: undo flags events instead of deleting them, so the log stays a full history. Toolbar buttons never take keyboard focus, so Enter/Space can't trigger them by accident.
@@ -531,7 +532,7 @@ photonic/
 - Setting to turn it on or off
 - Tests: rename, move, swapping two files' names, editing in place, moving one of two identical copies; choice of which copy stays; explicit marks never overridden; batch undo restores the exact previous state; **the full core test suite still passes with the feature turned off**
 
-**M6 — Polish**
+**M6 — Polish** ✅ *done 2026-11-20*
 - Shortcut overlay, full screen, `Space` zoom, HUD toggle, placeholder for unreadable files
 - Game touches (§12): pixel hearts, shrug wobble, segmented progress bar, "FOLDER CLEAR!" screen; `ui.animations` setting and reduced-motion support
 - All four palettes, **View → Theme** menu, dark mode

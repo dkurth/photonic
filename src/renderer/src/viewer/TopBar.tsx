@@ -21,21 +21,29 @@ export function TopBar({
   library,
   progress,
   controls,
-  onOpenFolder
+  onOpenFolder,
+  onSwitchLibrary
 }: {
   library: Library
   progress: ScanProgress | null
   controls?: ReactNode
   onOpenFolder: () => void
+  onSwitchLibrary: () => void
 }) {
   const status = scanStatus(progress)
   return (
     <header className="topbar">
       <Logo size={16} />
       <span className="divider" />
-      <span className="library-name" title={library.rootPath}>
-        {library.name}
-      </span>
+      <button
+        className="library-name"
+        title={`${library.rootPath} — switch library (⌘L)`}
+        onClick={onSwitchLibrary}
+        onMouseDown={(e) => e.preventDefault()}
+        data-testid="library-name"
+      >
+        {library.name} <span className="caret">▾</span>
+      </button>
       {controls}
       <span className="spacer" />
       {status && (

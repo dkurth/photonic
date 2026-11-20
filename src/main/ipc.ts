@@ -12,6 +12,7 @@ import { getPhotoRow, toPhotoMeta } from './photos'
 import { ensureMetadata, type Extractor } from './scanner/metadata'
 import type { ScanService } from './scanner/service'
 import { getSetting, setSetting } from './settings'
+import { readUi } from './ui'
 
 export const handle: IpcRegistrar = (channel, handler) => {
   ipcMain.handle(channel, (_event, ...args) => handler(...args))
@@ -83,6 +84,16 @@ export function registerCoreIpc(ctx: {
       lastBackup: last ? last.at.toISOString() : null
     }
   })
+
+  handle('app:toggleFullScreen', () => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    win?.setFullScreen(!win.isFullScreen())
+  })
+  handle(
+    'app:isFullScreen',
+    () => (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.isFullScreen() ?? false
+  )
+  handle('app:ui', () => readUi(db))
 
   handle('libraries:pickAndOpen', async () => {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]

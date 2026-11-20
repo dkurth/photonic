@@ -264,6 +264,8 @@ try {
       assert.equal((await stats(win)).like, 2)
       await win.keyboard.press('Meta+z')
       await waitPath(win, 'broken.jpg')
+      await win.waitForSelector('text=Undone')
+      assert.equal((await stats(win)).like, 1)
       // Regression: stale <img>s once piled up in the stage (duplicate React keys).
       await win.waitForSelector("text=Can't display this file.")
       assert.equal(await win.locator('[data-testid=stage] img').count(), 0)
@@ -387,6 +389,106 @@ try {
       assert.equal(await win.getByTestId('filter-like').getAttribute('aria-checked'), 'true')
       assert.match(await text(win, 'sort'), /^Date/)
       await waitPath(win, 'beach.png')
+    })
+
+    // ---- M6: polish ----
+    const clickMenu = (id) => app.evaluate(({ Menu }, id) => Menu.getApplicationMenu().getMenuItemById(id).click(), id)
+    const cssVar = (name) =>
+      win.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name)
+
+    await step('? shows the keyboard shortcuts; Escape closes them', async () => {
+      await win.keyboard.press('Shift+?')
+      const dlg = win.getByRole('dialog', { name: 'Keyboard shortcuts' })
+      await dlg.waitFor()
+      assert.match(await dlg.innerText(), /Order: filename → date → random/)
+      await shot(win, 'm6-shortcuts')
+      await win.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'detached' })
+    })
+
+    await step('H hides the toolbars; path and date stay visible', async () => {
+      await win.keyboard.press('h')
+      await win.waitForFunction(() => document.querySelector('.viewer')?.classList.contains('hud-hidden'))
+      assert.equal(await win.locator('.toolbar').isVisible(), false)
+      assert.equal(await win.getByTestId('path').isVisible(), true)
+      assert.equal(await win.getByTestId('date').isVisible(), true)
+      await win.keyboard.press('h')
+      await win.locator('.toolbar').waitFor({ state: 'visible' })
+    })
+
+    await step('Space zooms to 100% (one image pixel per screen pixel); Escape returns to fit', async () => {
+      await imageLoaded(win)
+      await win.keyboard.press(' ')
+      await win.locator('.zoom-badge').waitFor()
+      const { w, expected } = await win.evaluate(() => {
+        const img = document.querySelector('[data-testid=stage] img')
+        return { w: img.getBoundingClientRect().width, expected: img.naturalWidth / devicePixelRatio }
+      })
+      assert.ok(Math.abs(w - expected) < 1, `zoomed width ${w} vs ${expected}`)
+      await win.keyboard.press('Escape')
+      await win.locator('.zoom-badge').waitFor({ state: 'detached' })
+    })
+
+    await step('F enters full screen (toolbars hide), F again leaves', async () => {
+      const isFs = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())
+      await win.keyboard.press('f')
+      await win.waitForFunction(() => document.querySelector('.viewer')?.classList.contains('fullscreen'), null, {
+        timeout: 10_000
+      })
+      assert.equal(await isFs(), true)
+      assert.equal(await win.locator('.viewer').evaluate((el) => el.classList.contains('hud-hidden')), true)
+      await win.waitForTimeout(800) // let the macOS full-screen animation settle
+      await win.keyboard.press('f')
+      await win.waitForFunction(() => !document.querySelector('.viewer')?.classList.contains('fullscreen'), null, {
+        timeout: 10_000
+      })
+      await win.waitForTimeout(800)
+    })
+
+    await step('View → Theme switches palettes live; Appearance → Dark; Animations off', async () => {
+      assert.equal(await cssVar('--accent'), '#FFD166') // Arcade by default
+      await clickMenu('theme-desert')
+      await win.waitForFunction(
+        () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() === '#E9C46A'
+      )
+      await clickMenu('appearance-dark')
+      await win.waitForFunction(() => document.documentElement.dataset.mode === 'dark')
+      await shot(win, 'm6-desert-dark')
+      await clickMenu('theme-arcade')
+      await clickMenu('appearance-light')
+      await win.waitForFunction(() => document.documentElement.dataset.mode === 'light')
+      await clickMenu('animations')
+      await win.waitForFunction(() => document.documentElement.dataset.animations === 'off')
+      await clickMenu('animations')
+      await win.waitForFunction(() => document.documentElement.dataset.animations === 'on')
+      await clickMenu('appearance-system')
+    })
+
+    await step('Edit → Undo (the ⌘Z menu item) undoes a mark, once', async () => {
+      await win.keyboard.press('ArrowDown') // beach: like → meh
+      await win.getByTestId('done-screen').waitFor()
+      await clickMenu('undo')
+      await win.waitForSelector('text=Undone')
+      const c = await win.evaluate(async () =>
+        window.photonic.photos.counts((await window.photonic.libraries.last()).id, { kind: 'library' })
+      )
+      assert.equal(c.like, 1)
+      assert.equal(c.meh, 2)
+    })
+
+    await step('the segmented progress bar shows how much of the scope is reviewed', async () => {
+      const bar = win.getByTestId('progress')
+      assert.equal(await bar.getAttribute('aria-valuenow'), '1') // 2020/: beach liked
+      assert.equal(await bar.getAttribute('aria-valuemax'), '1')
+    })
+
+    await step('the library switcher lists libraries (click the name or ⌘L)', async () => {
+      await win.getByTestId('library-name').click()
+      const dlg = win.getByRole('dialog', { name: 'Switch library' })
+      await dlg.getByText('My Photos', { exact: true }).waitFor()
+      await win.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'detached' })
+      await shot(win, 'm6-viewer')
     })
     await app.close()
   }

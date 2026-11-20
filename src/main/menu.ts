@@ -1,4 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, type MenuItemConstructorOptions } from 'electron'
+import type { Appearance, UiSettings } from '@shared/types'
+import { PALETTES, type PaletteId } from '@shared/palettes'
 
 function send(command: string): void {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -9,6 +11,8 @@ export interface MenuOptions {
   /** Whether the optional dedupe feature is on (PLAN.md §8). */
   dedupe: boolean
   setDedupe: (on: boolean) => void
+  ui: () => UiSettings
+  setUi: (patch: Partial<UiSettings>) => void
 }
 
 async function toggleDedupe(opts: MenuOptions): Promise<void> {
@@ -33,19 +37,32 @@ async function toggleDedupe(opts: MenuOptions): Promise<void> {
 /** The app menu. Items that act on the UI send a command to the renderer. */
 export function buildMenu(opts: MenuOptions): void {
   const isMac = process.platform === 'darwin'
+  const ui = opts.ui()
   const template: MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
     {
       label: 'File',
       submenu: [
         { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: () => send('open-folder') },
+        { label: 'Switch Library…', accelerator: 'CmdOrCtrl+L', click: () => send('switch-library') },
         { label: 'Rescan Folder', accelerator: 'CmdOrCtrl+Shift+R', click: () => send('rescan') },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' }
       ]
     },
-    // Standard edit roles keep copy/paste working in text fields (e.g. the folder search).
-    { role: 'editMenu' },
+    // Undo is the app's own (marks); the page decides whether a text field should get it instead.
+    // Cut/copy/paste roles keep text fields (e.g. the folder search) working.
+    {
+      label: 'Edit',
+      submenu: [
+        { id: 'undo', label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => send('undo') },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
     {
       label: 'Library',
       submenu: [
@@ -58,6 +75,40 @@ export function buildMenu(opts: MenuOptions): void {
       label: 'View',
       submenu: [
         { role: 'togglefullscreen' },
+        {
+          label: 'Keyboard Shortcuts',
+          accelerator: 'Shift+/',
+          registerAccelerator: false,
+          click: () => send('shortcuts')
+        },
+        { type: 'separator' },
+        {
+          label: 'Theme',
+          submenu: (Object.keys(PALETTES) as PaletteId[]).map((id) => ({
+            id: `theme-${id}`,
+            label: PALETTES[id].name,
+            type: 'radio' as const,
+            checked: ui.theme === id,
+            click: () => opts.setUi({ theme: id })
+          }))
+        },
+        {
+          label: 'Appearance',
+          submenu: (['system', 'light', 'dark'] as Appearance[]).map((a) => ({
+            id: `appearance-${a}`,
+            label: a === 'system' ? 'Match System' : a === 'light' ? 'Light' : 'Dark',
+            type: 'radio' as const,
+            checked: ui.appearance === a,
+            click: () => opts.setUi({ appearance: a })
+          }))
+        },
+        {
+          id: 'animations',
+          label: 'Animations',
+          type: 'checkbox',
+          checked: ui.animations,
+          click: () => opts.setUi({ animations: !ui.animations })
+        },
         { type: 'separator' },
         {
           label: 'Duplicate Detection',
