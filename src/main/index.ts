@@ -5,6 +5,8 @@ import { backupIfDue } from './db/backup'
 import { coreMigrations } from './db/migrations'
 import { FeatureRegistry } from './features/registry'
 import { broadcastProgress, handle, registerCoreIpc } from './ipc'
+import { buildMenu } from './menu'
+import { handlePhotoProtocol, registerPhotoScheme } from './photoProtocol'
 import { ScanService } from './scanner/service'
 import { createWorkerExtractor } from './scanner/workerExtractor'
 
@@ -15,8 +17,11 @@ if (process.env.PHOTONIC_USER_DATA) {
   app.setPath('userData', `${app.getPath('userData')}-dev`)
 }
 
+registerPhotoScheme()
+
 let db: DB | null = null
 let scans: ScanService | null = null
+let backupDone: Promise<void> = Promise.resolve()
 const metadata = createWorkerExtractor()
 
 function createWindow(): void {
@@ -27,6 +32,8 @@ function createWindow(): void {
     minHeight: 480,
     show: false,
     backgroundColor: '#F4F1EA',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 14, y: 14 },
     title: 'Photonic',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -62,7 +69,10 @@ app.whenReady().then(() => {
 
   db = openDatabase(dbPath)
   migrate(db, [...coreMigrations, ...features.migrations()])
-  backupIfDue(db, backupDir).catch((err) => console.error('Backup failed:', err))
+  backupDone = backupIfDue(db, backupDir).then(
+    () => {},
+    (err) => console.error('Backup failed:', err)
+  )
 
   scans = new ScanService(db, {
     hooks: () => features.scanHooks(),
@@ -70,7 +80,9 @@ app.whenReady().then(() => {
     emit: broadcastProgress
   })
 
-  registerCoreIpc({ db, dbPath, backupDir, features, scans })
+  registerCoreIpc({ db, dbPath, backupDir, features, scans, extract: metadata.extract })
+  handlePhotoProtocol(() => db)
+  buildMenu()
   features.registerIpc(handle)
 
   createWindow()
@@ -84,16 +96,24 @@ app.on('window-all-closed', () => {
 })
 
 // Stop background work before closing the DB, so nothing writes to a closed connection.
+// Ends with app.exit(): calling app.quit() again from inside the quit sequence can be ignored
+// (it was, whenever the cleanup finished within the same tick).
 let quitting = false
 app.on('will-quit', (e) => {
   if (quitting) return
   quitting = true
   e.preventDefault()
   void (async () => {
-    await scans?.cancel()
-    await metadata.close()
-    db?.close()
-    db = null
-    app.quit()
+    try {
+      await scans?.cancel()
+      await metadata.close()
+      await backupDone
+      db?.close()
+      db = null
+    } catch (err) {
+      console.error('Error during shutdown:', err)
+    } finally {
+      app.exit(0)
+    }
   })()
 })

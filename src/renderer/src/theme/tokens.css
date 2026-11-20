@@ -1,0 +1,124 @@
+/* Non-color design tokens + base styles (PLAN.md §12). Colors come from applyTheme.ts as CSS
+   variables; the values below are only fallbacks for the first paint. */
+
+@font-face {
+  font-family: 'Monocraft';
+  src: url('../assets/fonts/Monocraft.ttf') format('truetype');
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Monocraft';
+  src: url('../assets/fonts/Monocraft-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: block;
+}
+
+:root {
+  --paper: #f4f1ea;
+  --surface: #ffffff;
+  --ink: #111111;
+  --muted: #5c5a55;
+  --stage: #262626;
+  --shadow: #111111;
+  --accent: #ffd166;
+  --on-accent: #111111;
+
+  --font-pixel: 'Monocraft', ui-monospace, monospace;
+  --font-ui: 'DM Sans', system-ui, sans-serif;
+  --font-data: 'Space Mono', ui-monospace, monospace;
+
+  --border-w: 2px;
+  --radius: 4px;
+  --lift: 4px;
+  --gutter: 16px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.4 var(--font-ui);
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--highlight, var(--accent)); outline-offset: 2px; }
+
+/* Pixel text: only at sizes that are multiples of the font's grid, without smoothing. */
+.pixel {
+  font-family: var(--font-pixel);
+  -webkit-font-smoothing: none;
+  letter-spacing: 0;
+}
+
+/* ---------- Raised buttons ---------- */
+.btn {
+  --btn-bg: var(--surface);
+  --btn-ink: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  background: var(--btn-bg);
+  color: var(--btn-ink);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+  padding: 9px 16px;
+  box-shadow: var(--lift) var(--lift) 0 var(--shadow);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 60ms ease-out, box-shadow 60ms ease-out;
+  -webkit-app-region: no-drag;
+}
+.btn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: calc(var(--lift) + 1px) calc(var(--lift) + 1px) 0 var(--shadow);
+}
+.btn:active:not(:disabled),
+.btn.pressed {
+  transform: translate(var(--lift), var(--lift));
+  box-shadow: 0 0 0 var(--shadow);
+}
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.accent { --btn-bg: var(--accent); --btn-ink: var(--on-accent); }
+.btn.like { --btn-bg: var(--like); --btn-ink: var(--on-like); }
+.btn.meh { --btn-bg: var(--meh); --btn-ink: var(--on-meh); }
+.btn.small { --lift: 3px; padding: 5px 10px; font-size: 13px; gap: 8px; }
+.btn.big { padding: 14px 26px; font-size: 18px; --lift: 5px; }
+
+/* Key caps: tiny raised keys showing the shortcut. */
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  box-shadow: 1.5px 1.5px 0 var(--shadow);
+}
+.btn .keycap { color: var(--ink); }
+.btn.small .keycap { min-width: 18px; height: 18px; font-size: 11px; }
+
+.emoticon { font-family: var(--font-ui); font-weight: 400; }
+
+/* ---------- Logo ---------- */
+.logo {
+  font-family: var(--font-pixel);
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--ink);
+  text-shadow: 2px 2px 0 var(--accent);
+  -webkit-font-smoothing: none;
+}
+.keycap-sym { font-family: var(--font-ui); font-size: 1.05em; margin-right: 1px; }

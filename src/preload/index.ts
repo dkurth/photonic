@@ -17,6 +17,21 @@ const api: PhotonicAPI = {
       ipcRenderer.on('libraries:progress', listener)
       return () => ipcRenderer.removeListener('libraries:progress', listener)
     }
+  },
+  photos: {
+    listIds: (view) => ipcRenderer.invoke('photos:listIds', view),
+    get: (id) => ipcRenderer.invoke('photos:get', id),
+    revealInFinder: (id) => ipcRenderer.invoke('photos:revealInFinder', id),
+    copyPath: (id) => ipcRenderer.invoke('photos:copyPath', id)
+  },
+  settings: {
+    get: (key) => ipcRenderer.invoke('settings:get', key),
+    set: (key, value) => ipcRenderer.invoke('settings:set', key, value)
+  },
+  onMenu: (cb) => {
+    const listener = (_e: IpcRendererEvent, command: string): void => cb(command)
+    ipcRenderer.on('menu', listener)
+    return () => ipcRenderer.removeListener('menu', listener)
   }
 }
 

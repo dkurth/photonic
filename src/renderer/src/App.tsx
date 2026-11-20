@@ -1,133 +1,81 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Library, LibraryStats, ScanProgress } from '@shared/types'
-
-// Temporary M1 screen: open a folder, watch the scan, see what was found. The viewer replaces it in M2.
-
-const n = (v: number): string => v.toLocaleString()
-
-function describe(p: ScanProgress | null): string {
-  if (!p) return 'Idle'
-  switch (p.phase) {
-    case 'walking':
-      return `Scanning… ${n(p.found)} photos found`
-    case 'metadata':
-      return p.metaTotal ? `Reading dates… ${n(p.metaDone)} / ${n(p.metaTotal)}` : 'Reading dates…'
-    case 'done':
-      return `Up to date: ${n(p.found)} photos (${n(p.added)} new, ${n(p.changed)} changed, ${n(p.missing)} newly missing)`
-    case 'error':
-      return `Scan failed: ${p.message ?? 'unknown error'}`
-  }
-}
+import type { Library, ScanProgress } from '@shared/types'
+import { useKeyboard } from './hooks/useKeyboard'
+import { applyTheme, systemMode } from './theme/applyTheme'
+import { DEFAULT_PALETTE, isPaletteId, type PaletteId } from './theme/palettes'
+import { Viewer } from './viewer/Viewer'
+import { Welcome } from './Welcome'
 
 export default function App() {
-  const api = window.photonic.libraries
+  const api = window.photonic
   const [library, setLibrary] = useState<Library | null>(null)
-  const [libraries, setLibraries] = useState<Library[]>([])
-  const [stats, setStats] = useState<LibraryStats | null>(null)
+  const [ready, setReady] = useState(false)
   const [progress, setProgress] = useState<ScanProgress | null>(null)
+  const [palette, setPalette] = useState<PaletteId>(DEFAULT_PALETTE)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(
-    async (lib: Library | null) => {
-      setLibraries(await api.list())
-      setStats(lib ? await api.stats(lib.id) : null)
-    },
-    [api]
-  )
+  // Theme: saved palette + follow the system light/dark setting.
+  useEffect(() => {
+    void api.settings.get<string>('ui.theme').then((t) => isPaletteId(t) && setPalette(t))
+  }, [api])
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = (): void => applyTheme(palette, systemMode())
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [palette])
 
-  const openLibrary = useCallback(
-    async (open: () => Promise<Library | null>) => {
-      try {
-        setError(null)
-        const lib = await open()
-        if (!lib) return
-        setLibrary(lib)
+  const open = useCallback(async (opener: () => Promise<Library | null>) => {
+    try {
+      setError(null)
+      const lib = await opener()
+      if (lib) {
         setProgress(null)
-        await refresh(lib)
-      } catch (e) {
-        setError(String(e))
+        setLibrary(lib)
       }
-    },
-    [refresh]
-  )
+    } catch (e) {
+      setError(String(e))
+    }
+  }, [])
+
+  const openFolder = useCallback(() => void open(api.libraries.pickAndOpen), [api, open])
 
   // Reopen the last library on launch.
   useEffect(() => {
-    void api.last().then((lib) => (lib ? openLibrary(() => api.open(lib.id)) : refresh(null)))
-  }, [api, openLibrary, refresh])
+    void api.libraries
+      .last()
+      .then((lib) => (lib ? open(() => api.libraries.open(lib.id)) : undefined))
+      .finally(() => setReady(true))
+  }, [api, open])
+
+  useEffect(() => api.libraries.onProgress(setProgress), [api])
 
   useEffect(
     () =>
-      api.onProgress((p) => {
-        if (p.libraryId !== library?.id) return
-        setProgress(p)
-        void api.stats(p.libraryId).then(setStats)
+      api.onMenu((cmd) => {
+        if (cmd === 'open-folder') openFolder()
+        if (cmd === 'rescan' && library) void api.libraries.rescan(library.id)
       }),
-    [api, library]
+    [api, library, openFolder]
   )
 
+  useKeyboard({ 'Mod+o': openFolder })
+
+  if (!ready) return null
   return (
-    <main className="m1">
-      <header>
-        <h1>PHOTONIC</h1>
-        <button className="btn" onClick={() => openLibrary(api.pickAndOpen)}>
-          Open a folder…
-        </button>
-      </header>
-
-      {error && <p className="err">{error}</p>}
-
-      {!library && <p className="hint">Choose a folder of photos to get started. Subfolders are included.</p>}
-
-      {library && (
-        <section className="card">
-          <div className="card-head">
-            <h2>{library.name}</h2>
-            <button className="btn small" onClick={() => api.rescan(library.id)}>
-              Rescan
-            </button>
-          </div>
-          <p className="path">{library.rootPath}</p>
-          <p className="status" data-phase={progress?.phase ?? 'idle'}>
-            {describe(progress)}
-            {progress && progress.unreadableFolders > 0 && ` · ${progress.unreadableFolders} folders unreadable`}
-          </p>
-          {stats && (
-            <dl>
-              <dt>Photos</dt>
-              <dd>{n(stats.total)}</dd>
-              <dt>Folders</dt>
-              <dd>{n(stats.folders)}</dd>
-              <dt>Unreviewed</dt>
-              <dd>{n(stats.unreviewed)}</dd>
-              <dt>Dates read</dt>
-              <dd>
-                {n(stats.metaRead)} ({n(stats.withTakenAt)} with a capture date)
-              </dd>
-              <dt>Missing</dt>
-              <dd>{n(stats.missing)}</dd>
-            </dl>
-          )}
-        </section>
+    <>
+      {library ? (
+        <Viewer
+          key={library.id}
+          library={library}
+          progress={progress?.libraryId === library.id ? progress : null}
+          onOpenFolder={openFolder}
+        />
+      ) : (
+        <Welcome onOpenFolder={openFolder} onOpen={(id) => void open(() => api.libraries.open(id))} />
       )}
-
-      {libraries.filter((l) => l.id !== library?.id).length > 0 && (
-        <section className="others">
-          <h3>Other libraries</h3>
-          <ul>
-            {libraries
-              .filter((l) => l.id !== library?.id)
-              .map((l) => (
-                <li key={l.id}>
-                  <button className="link" onClick={() => openLibrary(() => api.open(l.id))}>
-                    {l.name}
-                  </button>
-                  <span className="path">{l.rootPath}</span>
-                </li>
-              ))}
-          </ul>
-        </section>
-      )}
-    </main>
+      {error && <div className="toast error">{error}</div>}
+    </>
   )
 }

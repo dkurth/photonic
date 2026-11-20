@@ -1,16 +1,38 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import type { AppInfo, Library, ScanProgress } from '@shared/types'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import type { AppInfo, Library, ScanProgress, ViewSpec } from '@shared/types'
 import type { DB } from './db'
 import { schemaVersion } from './db'
 import { listBackups } from './db/backup'
 import type { FeatureRegistry } from './features/registry'
 import type { IpcRegistrar } from './features/types'
 import { addLibrary, getLibraryRow, libraryStats, listLibraries, toLibrary } from './library'
+import { listIds } from './ordering'
+import { getPhotoRow, toPhotoMeta } from './photos'
+import { ensureMetadata, type Extractor } from './scanner/metadata'
 import type { ScanService } from './scanner/service'
 import { getSetting, setSetting } from './settings'
 
 export const handle: IpcRegistrar = (channel, handler) => {
   ipcMain.handle(channel, (_event, ...args) => handler(...args))
+}
+
+function str(v: unknown, what: string): string {
+  if (typeof v !== 'string' || v.length === 0 || v.length > 200) throw new Error(`Invalid ${what}`)
+  return v
+}
+
+/** Checks the shape of a ViewSpec coming from the renderer. */
+function viewSpec(v: unknown): ViewSpec {
+  const o = v as ViewSpec
+  if (!o || typeof o !== 'object') throw new Error('Invalid view')
+  id(o.libraryId)
+  if (!['filename', 'date', 'random'].includes(o.sort)) throw new Error('Invalid sort')
+  str(o.filter, 'filter')
+  if (o.scope?.kind === 'folder') {
+    if (typeof o.scope.dirPath !== 'string') throw new Error('Invalid scope')
+  } else if (o.scope?.kind !== 'library') throw new Error('Invalid scope')
+  if (o.seed !== undefined && !Number.isSafeInteger(o.seed)) throw new Error('Invalid seed')
+  return o
 }
 
 /** IPC arguments come from the renderer; never trust their shape. */
@@ -31,6 +53,7 @@ export function registerCoreIpc(ctx: {
   backupDir: string
   features: FeatureRegistry
   scans: ScanService
+  extract: Extractor
 }): void {
   const { db, scans } = ctx
 
@@ -78,4 +101,26 @@ export function registerCoreIpc(ctx: {
   })
 
   handle('libraries:stats', (libraryId) => libraryStats(db, id(libraryId)))
+
+  handle('photos:listIds', (view) => listIds(db, viewSpec(view), ctx.features.filters()))
+
+  handle('photos:get', async (photoId) => {
+    const pid = id(photoId)
+    await ensureMetadata(db, pid, ctx.extract).catch(() => {})
+    const row = getPhotoRow(db, pid)
+    return row ? toPhotoMeta(row) : null
+  })
+
+  handle('photos:revealInFinder', (photoId) => {
+    const row = getPhotoRow(db, id(photoId))
+    if (row) shell.showItemInFolder(toPhotoMeta(row).absPath)
+  })
+
+  handle('photos:copyPath', (photoId) => {
+    const row = getPhotoRow(db, id(photoId))
+    if (row) clipboard.writeText(toPhotoMeta(row).absPath)
+  })
+
+  handle('settings:get', (key) => getSetting(db, str(key, 'key')))
+  handle('settings:set', (key, value) => setSetting(db, str(key, 'key'), value))
 }

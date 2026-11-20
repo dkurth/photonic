@@ -2,7 +2,8 @@
 
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
-Status: **v0.9** (2026-11-20). **M0 and M1 complete.**
+Status: **v0.10** (2026-11-20). **M0–M2 complete.**
+- v0.10: M2 built. The position is saved on every move, not debounced (a debounce lost the last move on quit). `listIds` already supports every scope, filter and sort; the controls for them come in M4.
 - v0.9: M1 built. Change from the plan: new files are inserted right away, and a move hook *merges* a new row into its matching missing row afterwards (§6, §8). Scanning also refuses to run if the library folder is gone, and never flags photos missing under folders it couldn't read.
 - v0.8: M0 built. Dev builds use a separate `Photonic-dev` data folder. better-sqlite3 13 ships prebuilt binaries that work in both Node and Electron, so tests run under plain Node.
 - v0.7: fonts are Monocraft (pixel), DM Sans (UI, proposed) and Space Mono (data). Arcade is the default palette.
@@ -504,7 +505,7 @@ photonic/
 - EXIF metadata worker (can be resumed) and on-demand reads for the current photo
 - Tests: scanner on a fixture tree (nested folders, hidden files, mixed-case extensions, `.heic`/`.mov` ignored, a symlink); EXIF parsing on sample files with and without EXIF
 
-**M2 — Viewer & navigation**
+**M2 — Viewer & navigation** ✅ *done 2026-11-20*
 - `photo://` protocol with the path check
 - Viewer, `←`/`→`, Home/End, preloading
 - **Info bar** with full path and display date, `C` to copy the path, `O` to show in Finder
@@ -652,7 +653,7 @@ These are popular, long-running palettes from Coolors' trending list. (I picked 
 |---|---|---|---|
 | **Arcade** *(default)* | `EF476F` `FFD166` `06D6A0` `118AB2` `073B4C` | Bright and game-like, closest to the video-game feel | accent yellow, like pink-red ♡, meh blue, highlight green, info deep teal |
 | **Desert Sunset** | `264653` `2A9D8F` `E9C46A` `F4A261` `E76F51` | Warm and grown-up; the most popular palette on the site | accent saffron, like burnt orange, meh slate, highlight teal, info sandy |
-| **Pastel Pop** | `CDB4DB` `FFC8DD` `FFAFCC` `BDE0FE` `A2D2FF` | Soft, closest to Gumroad's pink, but with **blue buttons** | accent sky blue, like pink, meh lavender, highlight baby blue, info light pink |
+| **Pastel Pop** | `CDB4DB` `FFC8DD` `FFAFCC` `BDE0FE` `A2D2FF` | Soft, closest to Gumroad's pink, but with **blue buttons** | accent sky blue, like pink, meh baby blue, highlight lavender, info light pink (pink and lavender were too similar for Like vs Meh — caught by the palette test) |
 | **Olive Grove** | `606C38` `283618` `FEFAE0` `DDA15E` `BC6C25` | Earthy and calm. Its cream works as the paper color. | accent tan, like copper, meh olive, highlight tan, info forest (paper `FEFAE0`, ink `283618`) |
 
 **Why Arcade is the default:** it's the most "video game" of the four, yellow buttons with black borders pop the way Gumroad's pink ones do, and pink-red is an obvious match for the ♡ on Like. Its blue for Meh is cool and calm, which fits "shrug" without suggesting anything bad is happening to the photo.

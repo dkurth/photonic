@@ -50,6 +50,44 @@ export interface ScanProgress {
 
 export type Unsubscribe = () => void
 
+export type SortOrder = 'filename' | 'date' | 'random'
+export type Scope = { kind: 'library' } | { kind: 'folder'; dirPath: string }
+/** Core filters; optional features may add more (e.g. 'duplicates'). */
+export type Filter = 'all' | 'unreviewed' | 'like' | 'meh' | (string & {})
+
+/** Everything that defines "the list of photos being viewed" (PLAN.md §7). */
+export interface ViewSpec {
+  libraryId: number
+  scope: Scope
+  filter: Filter
+  sort: SortOrder
+  /** Random order only: the same seed always gives the same order. */
+  seed?: number
+}
+
+export type DateSource = 'taken' | 'created' | 'modified'
+
+export interface PhotoMeta {
+  id: number
+  libraryId: number
+  relPath: string
+  dirPath: string
+  absPath: string
+  /** URL the renderer uses to display the image (photo:// protocol). */
+  url: string
+  status: Status
+  /** 'YYYY-MM-DD HH:MM:SS' — EXIF capture time, else file creation, else modification time. */
+  displayDate: string
+  dateSource: DateSource
+  sizeBytes: number
+  width: number | null
+  height: number | null
+  cameraMake: string | null
+  cameraModel: string | null
+  lensModel: string | null
+  missing: boolean
+}
+
 /** The API exposed to the renderer as `window.photonic` (see src/preload). Grows milestone by milestone. */
 export interface PhotonicAPI {
   app: {
@@ -67,4 +105,18 @@ export interface PhotonicAPI {
     stats(id: number): Promise<LibraryStats>
     onProgress(cb: (p: ScanProgress) => void): Unsubscribe
   }
+  photos: {
+    /** The ordered photo IDs for a view. This is the only place that decides what's in a view. */
+    listIds(view: ViewSpec): Promise<number[]>
+    /** Reads the photo's EXIF first if that hasn't happened yet, so the date is always real. */
+    get(id: number): Promise<PhotoMeta | null>
+    revealInFinder(id: number): Promise<void>
+    copyPath(id: number): Promise<void>
+  }
+  settings: {
+    get<T>(key: string): Promise<T | null>
+    set<T>(key: string, value: T): Promise<void>
+  }
+  /** Commands from the app menu (e.g. 'open-folder', 'rescan'). */
+  onMenu(cb: (command: string) => void): Unsubscribe
 }
