@@ -11,6 +11,8 @@ export interface ButtonProps {
   pressed?: boolean
   disabled?: boolean
   title?: string
+  /** Accessible name for icon-only buttons. */
+  ariaLabel?: string
   className?: string
   onClick?: () => void
 }
@@ -24,6 +26,7 @@ export function Button({
   pressed,
   disabled,
   title,
+  ariaLabel,
   className,
   onClick
 }: ButtonProps) {
@@ -36,6 +39,7 @@ export function Button({
       className={cls}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel}
       onClick={onClick}
       tabIndex={-1}
       // Don't take focus on click: a focused button would also be "clicked" by Enter/Space,

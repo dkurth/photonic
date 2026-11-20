@@ -842,3 +842,15 @@
     transition: none;
   }
 }
+
+/* Icon-only buttons (first / last photo): square, same height as the labelled ones. */
+.btn.icon-btn {
+  padding: 9px 12px;
+}
+/* 21px = 3 screen pixels per icon pixel, so the pixel art stays crisp. */
+.btn.icon-btn svg {
+  display: block;
+  height: 21px;
+  width: 21px;
+  margin: 0.5px 0;
+}

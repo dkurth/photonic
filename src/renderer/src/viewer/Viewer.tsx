@@ -339,8 +339,8 @@ export function Viewer({
       Backspace: (e) => !e.repeat && void mark('unreviewed'),
       'Mod+z': () => void undo(),
       u: (e) => !e.repeat && void mark('unreviewed'),
-      Home: () => go(0),
-      End: () => go(ids.length - 1),
+      Home: () => (press('first'), go(0)),
+      End: () => (press('last'), go(ids.length - 1)),
       Escape: () => (setDone(false), setZoomed(false)),
       Enter: () => {
         if (!done) return
@@ -448,8 +448,10 @@ export function Viewer({
         pressed={pressed}
         counts={counts}
         canMark={currentId !== undefined && !done}
+        onFirst={() => (press('first'), go(0))}
         onPrev={() => (press('prev'), prev())}
         onNext={() => (press('next'), next())}
+        onLast={() => (press('last'), go(ids.length - 1))}
         onLike={() => void mark('like')}
         onMeh={() => void mark('meh')}
       />

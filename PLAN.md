@@ -3,6 +3,7 @@
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
 Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
+- v1.4: First / last photo buttons (⏮ ⏭, icon-only pixel art) beside Prev / Next. Home / End push them.
 - v1.3: **Folder scopes removed** (the `G` picker and "Entire library" chip). To review one folder on its own, open it as its own library. Views are now just filter + sort, counts are per library, and the random seed is one per library.
 - v1.2: "Hide duplicates" **hides** the extra copies from review instead of marking them Meh (a duplicate isn't a judgement about the photo). Migration 003 adds `photos.hidden`/`hidden_reason` and generalizes the undo log. Hidden copies keep their marks, show up only under Duplicates, and come back with ⌘Z or when the feature is turned off.
 - v1.1: the filter control is a dropdown chip (`Unreviewed ▾`) instead of a row of segments, so it stays narrow as filters (and later playlists) are added. It lists each filter with its key and count; number keys still switch directly.
@@ -60,7 +61,7 @@ Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
 | `↓` | Mark **Meh** ¯\_(ツ)_/¯, then go to the **next unreviewed** photo |
 | `Backspace` / `U` | Clear the mark (back to *unreviewed*); stay on this photo |
 | `Cmd+Z` | Undo the last mark (or the last bulk action) and go back to that photo |
-| `Home` / `End` | First / last photo |
+| `Home` / `End` | First / last photo (also the ⏮ ⏭ buttons) |
 | `S` | Cycle sort order: Filename → Capture date → Random |
 | `R` | Reshuffle (random order only) |
 | `1` `2` `3` `4` | Filter: All / Unreviewed / Like / Meh |

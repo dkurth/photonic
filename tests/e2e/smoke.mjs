@@ -173,6 +173,20 @@ try {
       assert.equal(await text(win, 'position'), '1 / 5')
     })
 
+    await step('the ⏮ / ⏭ buttons jump to the first / last photo', async () => {
+      await win.getByRole('button', { name: 'Last photo' }).click()
+      await waitPath(win, 'beach.png')
+      assert.equal(await win.getByRole('button', { name: 'Last photo' }).isDisabled(), true)
+      await win.getByRole('button', { name: 'First photo' }).click()
+      await waitPath(win, 'broken.jpg')
+      assert.equal(await win.getByRole('button', { name: 'First photo' }).isDisabled(), true)
+      await win.keyboard.press('End') // and Home/End still work, pushing the same buttons
+      await waitPath(win, 'beach.png')
+      await win.keyboard.press('Home')
+      await waitPath(win, 'broken.jpg')
+      await shot(win, 'first-last')
+    })
+
     await step('C copies the full path', async () => {
       await win.keyboard.press('ArrowRight')
       await win.waitForFunction(() => document.querySelector('[data-testid=path]')?.textContent.endsWith('top.jpg'))

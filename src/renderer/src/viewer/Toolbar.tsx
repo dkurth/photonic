@@ -2,6 +2,7 @@ import type { StatusCounts } from '@shared/types'
 import { STATUS_LABELS } from '@shared/labels'
 import { Button } from '../components/Button'
 import { ProgressBar } from '../components/ProgressBar'
+import { SkipIcon } from '../components/SkipIcon'
 import { fmtNumber } from './format'
 
 export function Toolbar({
@@ -10,8 +11,10 @@ export function Toolbar({
   pressed,
   counts,
   canMark,
+  onFirst,
   onPrev,
   onNext,
+  onLast,
   onLike,
   onMeh
 }: {
@@ -20,8 +23,10 @@ export function Toolbar({
   pressed: Set<string>
   counts: StatusCounts | null
   canMark: boolean
+  onFirst: () => void
   onPrev: () => void
   onNext: () => void
+  onLast: () => void
   onLike: () => void
   onMeh: () => void
 }) {
@@ -34,6 +39,16 @@ export function Toolbar({
         {counts && <ProgressBar value={counts.like + counts.meh} total={counts.total} />}
       </div>
       <div className="controls">
+        <Button
+          className="icon-btn"
+          pressed={pressed.has('first')}
+          disabled={index <= 0}
+          onClick={onFirst}
+          title="First photo (Home)"
+          ariaLabel="First photo"
+        >
+          <SkipIcon to="first" />
+        </Button>
         <Button
           keys={['←']}
           pressed={pressed.has('prev')}
@@ -65,6 +80,16 @@ export function Toolbar({
         </Button>
         <Button keys={['→']} pressed={pressed.has('next')} disabled={total === 0} onClick={onNext} title="Next photo">
           Next
+        </Button>
+        <Button
+          className="icon-btn"
+          pressed={pressed.has('last')}
+          disabled={index >= total - 1}
+          onClick={onLast}
+          title="Last photo (End)"
+          ariaLabel="Last photo"
+        >
+          <SkipIcon to="last" />
         </Button>
       </div>
       <div className="toolbar-right counts" data-testid="counts">
