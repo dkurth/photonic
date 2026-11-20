@@ -1,48 +1,48 @@
 import type { PhotoMeta } from '@shared/types'
 
 /**
- * Photo metadata by id (memoized IPC calls) plus decoded neighbor images, so moving to the next
- * or previous photo is instant (PLAN.md §7).
+ * Photo metadata by id (memoized IPC calls). `peek` returns already-resolved entries synchronously,
+ * so moving to a preloaded photo can render in the same frame as the keypress (PLAN.md §7).
+ * The images themselves are preloaded by the Stage as hidden, laid-out <img> elements.
  */
 export class PhotoCache {
   private metas = new Map<number, Promise<PhotoMeta | null>>()
-  private images = new Map<number, HTMLImageElement>()
+  private resolved = new Map<number, PhotoMeta>()
 
   get(id: number): Promise<PhotoMeta | null> {
     let p = this.metas.get(id)
     if (!p) {
-      p = window.photonic.photos.get(id).catch(() => null)
+      p = window.photonic.photos
+        .get(id)
+        .catch(() => null)
+        .then((m) => {
+          if (m && this.metas.get(id) === p) this.resolved.set(id, m)
+          return m
+        })
       this.metas.set(id, p)
     }
     return p
   }
 
+  /** The metadata if it has already arrived, without waiting. */
+  peek(id: number): PhotoMeta | undefined {
+    return this.resolved.get(id)
+  }
+
   /** Replace a cached entry (e.g. after a status change). */
   set(meta: PhotoMeta): void {
     this.metas.set(meta.id, Promise.resolve(meta))
+    this.resolved.set(meta.id, meta)
   }
 
   /** Forget one photo's metadata so it's fetched again next time. */
   invalidate(id: number): void {
     this.metas.delete(id)
-  }
-
-  /** Starts loading + decoding the image so it can be shown without a flash. */
-  preload(meta: PhotoMeta): void {
-    if (this.images.has(meta.id) || meta.missing) return
-    const img = new Image()
-    img.src = meta.url
-    img.decode().catch(() => {})
-    this.images.set(meta.id, img)
-  }
-
-  /** Drop decoded images that are no longer near the current photo. */
-  keepImages(ids: Iterable<number>): void {
-    const keep = new Set(ids)
-    for (const id of this.images.keys()) if (!keep.has(id)) this.images.delete(id)
+    this.resolved.delete(id)
   }
 
   clear(): void {
     this.metas.clear()
+    this.resolved.clear()
   }
 }

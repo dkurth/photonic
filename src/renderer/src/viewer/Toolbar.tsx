@@ -3,6 +3,7 @@ import { STATUS_LABELS } from '@shared/labels'
 import { Button } from '../components/Button'
 import { ProgressBar } from '../components/ProgressBar'
 import { SkipIcon } from '../components/SkipIcon'
+import type { Flash } from './Stage'
 import { fmtNumber } from './format'
 
 export function Toolbar({
@@ -15,6 +16,7 @@ export function Toolbar({
   onPrev,
   onNext,
   onLast,
+  flash,
   onLike,
   onMeh
 }: {
@@ -27,6 +29,8 @@ export function Toolbar({
   onPrev: () => void
   onNext: () => void
   onLast: () => void
+  /** The last mark: its button wiggles (re-keyed so each mark restarts the animation). */
+  flash: Flash | null
   onLike: () => void
   onMeh: () => void
 }) {
@@ -59,6 +63,8 @@ export function Toolbar({
           Prev
         </Button>
         <Button
+          key={`meh-${flash?.status === 'meh' ? flash.n : 0}`}
+          className={flash?.status === 'meh' ? 'wiggle' : undefined}
           variant="meh"
           keys={['↓']}
           pressed={pressed.has('meh')}
@@ -69,6 +75,8 @@ export function Toolbar({
           <span className="emoticon">{STATUS_LABELS.meh.emoticon}</span> Meh
         </Button>
         <Button
+          key={`like-${flash?.status === 'like' ? flash.n : 0}`}
+          className={flash?.status === 'like' ? 'wiggle' : undefined}
           variant="like"
           keys={['↑']}
           pressed={pressed.has('like')}

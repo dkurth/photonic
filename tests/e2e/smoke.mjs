@@ -83,7 +83,7 @@ const text = (win, testId) => win.getByTestId(testId).innerText()
 const shot = async (win, name) => shots && win.screenshot({ path: join(shots, `${name}.png`) })
 const imageLoaded = (win) =>
   win.waitForFunction(() => {
-    const img = document.querySelector('[data-testid=stage] img')
+    const img = document.querySelector('[data-testid=stage] img.current')
     return img && img.complete && img.naturalWidth > 0
   })
 const waitPath = (win, suffix) =>
@@ -210,14 +210,17 @@ try {
           src
         )
       assert.equal(await load('photo://img/999999'), 'error')
-      assert.equal(await load(await win.locator('[data-testid=stage] img').getAttribute('src')), 'loaded')
+      assert.equal(await load(await win.locator('[data-testid=stage] img.current').getAttribute('src')), 'loaded')
     })
 
     // ---- M3: marking ----
-    await step('↑ Likes and jumps to the next unreviewed photo', async () => {
+    await step('↑ Likes and jumps to the next unreviewed photo; only the Like button wiggles', async () => {
       await win.keyboard.press('Home')
       await waitPath(win, 'broken.jpg')
       await win.keyboard.press('ArrowUp')
+      await win.waitForSelector('.toolbar .btn.like.wiggle')
+      assert.equal(await win.locator('.toolbar .btn.meh.wiggle').count(), 0)
+      assert.equal(await win.locator('.stage .mark-flash, .stage .pixel-hearts').count(), 0)
       await waitPath(win, 'top.jpg')
       assert.equal((await stats(win)).like, 1)
     })
@@ -288,14 +291,16 @@ try {
       await waitPath(win, 'broken.jpg')
       await win.waitForSelector('text=Undone')
       assert.equal((await stats(win)).like, 1)
-      // Regression: stale <img>s once piled up in the stage (duplicate React keys).
+      // Regression: stale <img>s once piled up in the stage (duplicate React keys). Now the stage
+      // holds the current photo plus a few invisible standby ones, never more.
       await win.waitForSelector("text=Can't display this file.")
-      assert.equal(await win.locator('[data-testid=stage] img').count(), 0)
+      assert.equal(await win.locator('[data-testid=stage] img.current').count(), 0)
+      assert.ok((await win.locator('[data-testid=stage] img').count()) <= 4)
       await win.keyboard.press('ArrowRight')
       await waitPath(win, 'top.jpg')
       await imageLoaded(win)
-      assert.equal(await win.locator('[data-testid=stage] img').count(), 1)
-      await win.waitForSelector('.mark-flash', { state: 'detached' })
+      assert.equal(await win.locator('[data-testid=stage] img.current').count(), 1)
+      assert.equal(await win.locator('.mark-flash').count(), 0) // no overlay in the middle any more
       assert.equal(await win.evaluate(() => document.activeElement?.tagName), 'BODY', 'buttons must not keep focus')
       await shot(win, 'm3-viewer')
     })
@@ -448,7 +453,7 @@ try {
       await win.keyboard.press(' ')
       await win.locator('.zoom-badge').waitFor()
       const { w, expected } = await win.evaluate(() => {
-        const img = document.querySelector('[data-testid=stage] img')
+        const img = document.querySelector('[data-testid=stage] img.current')
         return { w: img.getBoundingClientRect().width, expected: img.naturalWidth / devicePixelRatio }
       })
       assert.ok(Math.abs(w - expected) < 1, `zoomed width ${w} vs ${expected}`)

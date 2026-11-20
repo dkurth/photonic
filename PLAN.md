@@ -3,6 +3,7 @@
 A local desktop app for going through a folder of photos quickly using the keyboard: **Like** it, **Meh** it, or skip it.
 
 Status: **v1.0** (2026-11-20). **All milestones (M0–M7) complete.**
+- v1.7: Marking feedback is a small wiggle of the Like/Meh toolbar button (the centre badge, border flash and hearts are gone). **Faster photo switching:** the next photos are kept *in the stage* as invisible `<img>` elements, explicitly decoded, and metadata already in the cache is used in the same render as the keypress. Measured on 12 MP JPEGs, the time from keypress to the next photo painted: typically 4–12 ms, worst 9–19 ms at ~2 presses/s (was ~65 ms on the first press), and ≤17 ms at ~7 presses/s in most runs. Sustained very fast pressing on very large photos is limited by JPEG decoding (~90 ms per 12 MP photo); screen-sized previews would be the next step if that ever matters.
 - v1.6: `PHOTONIC_HIDDEN=1` runs the app without ever showing its window or taking focus (no Dock icon, rendering still works for Playwright and screenshots). The e2e suite always uses it.
 - v1.5: **Like / Meh a whole folder** (`F`): type a folder path (absolute, relative to the library, or `~/…`) or browse, see how many photos it holds (subfolders included), then Meh / Like / Cancel. If photos carry the opposite mark, it asks first: *"20 photos in that folder are marked Like. Do you want to overwrite that?"* → *Meh them all* / *Meh only the unreviewed ones*. One batch, so one ⌘Z undoes it. **Full-screen mode removed** (the window isn't fullscreenable; `F` is reused). The date no longer adds "· no EXIF date".
 - v1.4: First / last photo buttons (⏮ ⏭, icon-only pixel art) beside Prev / Next. Home / End push them.
@@ -300,7 +301,7 @@ What you're viewing is defined by two settings, stored per library in `settings`
 ### Display
 
 - `object-fit: contain` on a dark background, filling the window. `Space` switches to 100% zoom (drag to pan).
-- **Preloading:** keep the next 2 and previous 1 photos loaded as off-screen `Image` objects (`decode()`), so moving between photos is instant. Drop anything outside that window. "Next" here means the photo that `↑`/`↓` would jump to, i.e. the next unreviewed one.
+- **Preloading:** the photos ↑/↓ and ←/→ would go to next are rendered in the stage as invisible `<img>` elements (laid out at display size, explicitly `decode()`d), so moving to one just makes it visible. That's measured at one or two frames.
 - **Missing or unreadable files:** show a placeholder with the path and an error message. Navigation and marking still work.
 
 ### Info bar (always visible, `H` doesn't hide it)

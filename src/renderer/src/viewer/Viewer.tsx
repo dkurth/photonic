@@ -47,6 +47,8 @@ export function Viewer({
   const [statuses, setStatuses] = useState<Status[]>([])
   const [index, setIndex] = useState(0)
   const [meta, setMeta] = useState<PhotoMeta | null>(null)
+  /** The photos most likely to come next, kept decoded in the stage so they show instantly. */
+  const [standby, setStandby] = useState<PhotoMeta[]>([])
   const [counts, setCounts] = useState<StatusCounts | null>(null)
   const [done, setDone] = useState(false)
   const [flash, setFlash] = useState<Flash | null>(null)
@@ -139,12 +141,15 @@ export function Viewer({
       if (!live) return
       setMeta(m)
       // Preload where ↑/↓ would go next, plus the plain neighbors.
+      // Where ↑/↓ would go next, the one after that, and ←/→. (Looking further ahead was measured
+      // to be no faster: the extra decodes compete with the one that's needed next.)
       const jump = view ? nextAfterMark(statuses, index, view.filter) : null
       const near = [
         ...new Set([jump === null ? undefined : ids[jump], ids[index + 1], ids[index + 2], ids[index - 1]])
       ].filter((x): x is number => x !== undefined)
-      cache.keepImages([currentId, ...near])
-      for (const id of near) void cache.get(id).then((n) => n && cache.preload(n))
+      void Promise.all(near.map((id) => cache.get(id))).then((ms) => {
+        if (live) setStandby(ms.filter((x): x is PhotoMeta => !!x && !x.missing))
+      })
     })
     return () => {
       live = false
@@ -193,7 +198,13 @@ export function Viewer({
       const updated = [...statuses]
       updated[i] = status
       setStatuses(updated)
-      if (meta?.id === currentId) setMeta({ ...meta, status })
+      // Update the cached copy too: rendering reads it (cache.peek) to switch photos instantly.
+      const cur = cache.peek(currentId) ?? (meta?.id === currentId ? meta : null)
+      if (cur) {
+        const updated = { ...cur, status }
+        cache.set(updated)
+        setMeta(updated)
+      }
       setFlash((f) => {
         const n = (f?.n ?? 0) + 1
         // Remove it once the animation is over, rather than trusting it to end invisible.
@@ -375,11 +386,15 @@ export function Viewer({
     if (view) await loadList(view, index)
   }, [index, loadList, view])
 
+  // If the next photo's details are already here (they usually are), show it in this very render
+  // instead of waiting for the effect above.
+  const shown = (currentId !== undefined ? cache.peek(currentId) : undefined) ?? (meta?.id === currentId ? meta : null)
+
   const featureCtx: FeatureContext | null = view
     ? {
         libraryId: library.id,
         view,
-        meta,
+        meta: shown,
         progress,
         setFilter,
         reload,
@@ -422,14 +437,14 @@ export function Viewer({
         }
       />
       <Stage
-        meta={meta}
+        meta={shown}
+        standby={standby}
         empty={empty}
-        flash={flash}
         zoomed={zoomed}
         overlay={done ? <DoneScreen counts={counts} unreviewedEarlier={unreviewedEarlier} /> : null}
       />
       <InfoBar
-        meta={meta}
+        meta={shown}
         pressed={pressed}
         onCopy={copyPath}
         onReveal={reveal}
@@ -445,6 +460,7 @@ export function Viewer({
         onPrev={() => (press('prev'), prev())}
         onNext={() => (press('next'), next())}
         onLast={() => (press('last'), go(ids.length - 1))}
+        flash={flash}
         onLike={() => void mark('like')}
         onMeh={() => void mark('meh')}
       />

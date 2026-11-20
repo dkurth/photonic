@@ -127,6 +127,20 @@
   height: 100%;
   object-fit: contain;
   image-orientation: from-image;
+  position: absolute;
+  inset: 0;
+}
+/* Next photos wait here, laid out at full size (so they're decoded at display size) but invisible. */
+.stage img.standby {
+  opacity: 0;
+  pointer-events: none;
+}
+.stage.zoomed img.current {
+  right: auto;
+  bottom: auto;
+}
+.stage.zoomed img.standby {
+  display: none;
 }
 .stage-message {
   color: #d9d9d9;
@@ -248,63 +262,6 @@
 .status-tag.meh {
   --tag-bg: var(--meh);
   --tag-ink: var(--on-meh);
-}
-
-/* ---------- Mark flash ---------- */
-.mark-flash {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  display: grid;
-  place-items: center;
-  animation: mark-flash 320ms ease-out forwards;
-}
-.mark-flash.like {
-  box-shadow: inset 0 0 0 10px var(--like);
-}
-.mark-flash.meh {
-  box-shadow: inset 0 0 0 10px var(--meh);
-}
-.mark-flash.unreviewed {
-  box-shadow: inset 0 0 0 10px #8a8a8a;
-}
-.mark-flash-badge {
-  font-size: 40px;
-  padding: 10px 22px;
-  border-radius: var(--radius);
-  border: var(--border-w) solid var(--ink);
-  box-shadow: var(--lift) var(--lift) 0 var(--shadow);
-  animation: mark-badge 320ms ease-out forwards;
-}
-.mark-flash.like .mark-flash-badge {
-  background: var(--like);
-  color: var(--on-like);
-}
-.mark-flash.meh .mark-flash-badge {
-  background: var(--meh);
-  color: var(--on-meh);
-}
-@keyframes mark-flash {
-  0% {
-    opacity: 1;
-  }
-  60% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-@keyframes mark-badge {
-  0% {
-    transform: scale(0.85);
-  }
-  30% {
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-  }
 }
 
 /* ---------- Done screen ---------- */
@@ -774,68 +731,40 @@
 }
 
 /* ---------- Game touches ---------- */
-.pixel-hearts {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  pointer-events: none;
+/* A mark wiggles its toolbar button. `rotate` is separate from `transform`, so it combines
+   with the button's pressed (sunk-in) look instead of overriding it. */
+.btn.wiggle {
+  animation: wiggle 360ms ease-out;
 }
-.pixel-hearts span {
-  position: absolute;
-  left: var(--dx);
-  top: -20px;
-  color: var(--like);
-  fill: currentColor;
-  filter: drop-shadow(2px 2px 0 var(--shadow));
-  animation: heart-rise 650ms ease-out both;
-}
-@keyframes heart-rise {
+@keyframes wiggle {
   0% {
-    transform: translate(0, 0) scale(0.6);
-    opacity: 0;
+    rotate: 0deg;
   }
   20% {
-    opacity: 1;
+    rotate: -4deg;
+  }
+  45% {
+    rotate: 3.5deg;
+  }
+  70% {
+    rotate: -2deg;
   }
   100% {
-    transform: translate(0, -120px) scale(1);
-    opacity: 0;
-  }
-}
-.mark-flash.meh .mark-flash-badge {
-  animation: shrug 420ms ease-out both;
-}
-@keyframes shrug {
-  0% {
-    transform: rotate(0) scale(0.9);
-  }
-  25% {
-    transform: rotate(-7deg) scale(1.05);
-  }
-  50% {
-    transform: rotate(6deg);
-  }
-  75% {
-    transform: rotate(-3deg);
-  }
-  100% {
-    transform: rotate(0) scale(1);
+    rotate: 0deg;
   }
 }
 
 /* Animations off (View menu) or Reduce Motion: no flashes, hearts or wobbles. */
-[data-animations='off'] .mark-flash,
-[data-animations='off'] .pixel-hearts {
-  display: none;
+[data-animations='off'] .btn.wiggle {
+  animation: none;
 }
 [data-animations='off'] .btn,
 [data-animations='off'] .chip {
   transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .mark-flash,
-  .pixel-hearts {
-    display: none;
+  .btn.wiggle {
+    animation: none;
   }
   .btn,
   .chip {
